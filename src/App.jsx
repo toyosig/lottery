@@ -1,10 +1,9 @@
+
 import React, { useState, useEffect } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, LAMPORTS_PER_SOL, SystemProgram } from "@solana/web3.js";
-
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
-import * as anchor from "@coral-xyz/anchor";
 import idl from "./idl.json";
 
 // Import images from assets
@@ -19,33 +18,17 @@ import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
 const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
 const RECENT_BLOCKHASHES_SYSVAR = new PublicKey("SysvarRecentB1ockHashes11111111111111111111");
-
+const TOKEN_ADDRESS = "5DmyuqNcVyk5shh8J8vUgdLmttu4CMyikHDsXFDQpump";
+const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
-const MIN_SOL_BALANCE = 0.1;
+
+// Optional: Add your Moralis API key for holder ranking features
+const MORALIS_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ijk4OTZhZDI1LTA5NDItNDc5Yi1iMjcxLWQwZDRiMDY1ZmI2MCIsIm9yZ0lkIjoiMzc1Njk2IiwidXNlcklkIjoiMzg2MDc2IiwidHlwZUlkIjoiYmViZjI4N2ItNjMyNS00MmQ2LWI1NmYtY2YzMTY4MWZhZmE5IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3MDcwNDE3ODIsImV4cCI6NDg2MjgwMTc4Mn0.qhV3NBVMXvKm5Gt1pPtYIVSdwlErOYZ4e4gXjs4x5Hg";
 
 const symbols = [santa, twoImage, giraffe, apple, fourImage, zeroImage];
 const isImage = (symbol) => typeof symbol === "string";
 
-// Map blockchain reel values (0-9) to our symbols
-const mapReelToSymbol = (reelValue) => {
-  const mapping = {
-    0: zeroImage,
-    1: santa,
-    2: twoImage,
-    3: giraffe,
-    4: fourImage,
-    5: apple,
-    6: santa,
-    7: giraffe,
-    8: apple,
-    9: twoImage
-  };
-  return mapping[reelValue] || santa;
-};
-
-// ------------------------
 // Confetti Component
-// ------------------------
 const Confetti = () => {
   const confettiPieces = Array.from({ length: 200 }, (_, i) => ({
     id: i,
@@ -76,9 +59,7 @@ const Confetti = () => {
   );
 };
 
-// ------------------------
 // Reel Component
-// ------------------------
 const Reel = ({ spinning, result, delay }) => {
   const renderSymbol = (symbol) => {
     if (!symbol) return null;
@@ -115,9 +96,7 @@ const Reel = ({ spinning, result, delay }) => {
   );
 };
 
-// ------------------------
 // Main App Component
-// ------------------------
 const App = () => {
   const { connection } = useConnection();
   const { publicKey, connected, wallet } = useWallet();
@@ -136,11 +115,15 @@ const App = () => {
   const [prizePool, setPrizePool] = useState(0);
   const [isRegistering, setIsRegistering] = useState(false);
   const [isBuyingSpin, setIsBuyingSpin] = useState(false);
-  const [solBalance, setSolBalance] = useState(0);
-  const [hasEnoughSOL, setHasEnoughSOL] = useState(false);
   const [timeUntilReset, setTimeUntilReset] = useState("");
-  const [holderRank, setHolderRank] = useState(50);
-  const [copiedContract, setCopiedContract] = useState(false);
+  
+  // Token-related states
+  const [tokenBalance, setTokenBalance] = useState(0);
+  const [tokenValueSOL, setTokenValueSOL] = useState(0);
+  const [tokenPriceUSD, setTokenPriceUSD] = useState(0);
+  const [holderRank, setHolderRank] = useState(null);
+  const [hasMinTokens, setHasMinTokens] = useState(false);
+  const [isCheckingTokens, setIsCheckingTokens] = useState(false);
 
   // Setup Anchor program
   useEffect(() => {
@@ -166,28 +149,236 @@ const App = () => {
     }
   }, [connection, wallet]);
 
-  // Fetch SOL balance
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!publicKey || !connection) return;
-
-      try {
-        const balance = await connection.getBalance(publicKey);
-        const solBal = balance / LAMPORTS_PER_SOL;
-        console.log(`💰 SOL balance: ${solBal.toFixed(4)}`);
-        setSolBalance(solBal);
-        setHasEnoughSOL(solBal >= MIN_SOL_BALANCE);
-      } catch (e) {
-        console.log("⚠️ Failed to fetch balance:", e.message);
-        setSolBalance(0);
-        setHasEnoughSOL(false);
+  // Fetch SOL price in USD from DexScreener
+  const fetchSOLPrice = async () => {
+    try {
+      console.log("🔍 Fetching SOL/USD price...");
+      const response = await fetch(
+        `https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`DexScreener SOL API error: ${response.status}`);
       }
-    };
 
-    fetchBalance();
-    const interval = setInterval(fetchBalance, 10000);
-    return () => clearInterval(interval);
-  }, [publicKey, connection]);
+      const data = await response.json();
+      
+      if (data.pairs && data.pairs.length > 0) {
+        const bestPair = data.pairs.reduce((prev, current) => 
+          (prev.liquidity?.usd || 0) > (current.liquidity?.usd || 0) ? prev : current
+        );
+        
+        const solPriceUSD = parseFloat(bestPair.priceUsd || 0);
+        console.log("💰 SOL Price: $" + solPriceUSD.toFixed(2));
+        
+        return solPriceUSD;
+      }
+      
+      console.warn("⚠️ No SOL pairs found");
+      return 0;
+    } catch (error) {
+      console.error("❌ Failed to fetch SOL price:", error);
+      return 0;
+    }
+  };
+
+  // Fetch token price from DexScreener API
+  const fetchTokenPrice = async () => {
+    try {
+      console.log("🔍 Fetching token price from DexScreener...");
+      
+      const [tokenResponse, solPriceUSD] = await Promise.all([
+        fetch(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`),
+        fetchSOLPrice()
+      ]);
+      
+      if (!tokenResponse.ok) {
+        throw new Error(`DexScreener API error: ${tokenResponse.status}`);
+      }
+
+      const tokenData = await tokenResponse.json();
+      
+      if (tokenData.pairs && tokenData.pairs.length > 0) {
+        const bestPair = tokenData.pairs.reduce((prev, current) => 
+          (prev.liquidity?.usd || 0) > (current.liquidity?.usd || 0) ? prev : current
+        );
+        
+        const tokenPriceUSD = parseFloat(bestPair.priceUsd || 0);
+        const tokenPriceSOL = solPriceUSD > 0 ? tokenPriceUSD / solPriceUSD : 0;
+        
+        console.log("💰 Token Price:", { 
+          tokenPriceUSD: tokenPriceUSD.toFixed(8),
+          solPriceUSD: solPriceUSD.toFixed(2),
+          tokenPriceSOL: tokenPriceSOL.toFixed(8)
+        });
+        
+        setTokenPriceUSD(tokenPriceUSD);
+        
+        return { priceUSD: tokenPriceUSD, priceSOL: tokenPriceSOL };
+      }
+      
+      console.warn("⚠️ No pairs found for token - using fallback");
+      return { priceUSD: 0, priceSOL: 0 };
+    } catch (error) {
+      console.error("❌ Failed to fetch token price:", error);
+      return { priceUSD: 0, priceSOL: 0 };
+    }
+  };
+
+  // Fetch token holders from Moralis API
+  const fetchTokenHolders = async () => {
+    if (!MORALIS_API_KEY) {
+      console.log("⚠️ Moralis API key not configured - skipping holder ranking");
+      return [];
+    }
+
+    try {
+      console.log("🔍 Fetching token holders from Moralis...");
+      
+      const options = {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'X-API-Key': MORALIS_API_KEY
+        }
+      };
+
+      const response = await fetch(
+        `https://solana-gateway.moralis.io/token/mainnet/${TOKEN_ADDRESS}/owners?limit=100`,
+        options
+      );
+
+      if (!response.ok) {
+        throw new Error(`Moralis API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("📊 Token holders data:", data);
+      
+      return data.result || [];
+    } catch (error) {
+      console.error("❌ Failed to fetch token holders:", error);
+      return [];
+    }
+  };
+
+  // Check user's token balance and rank
+  const checkTokenHoldings = async (walletAddress) => {
+    if (!walletAddress) return;
+    
+    setIsCheckingTokens(true);
+    console.log("🔍 Checking token holdings for:", walletAddress.toString());
+
+    try {
+      const { priceUSD, priceSOL } = await fetchTokenPrice();
+      
+      if (priceUSD === 0 || priceSOL === 0) {
+        console.warn("⚠️ Could not fetch token price - allowing play anyway");
+        setTokenBalance(1);
+        setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
+        setHasMinTokens(true);
+        setIsCheckingTokens(false);
+        return;
+      }
+
+      if (!MORALIS_API_KEY) {
+        console.log("⚠️ Moralis API not configured - using fallback values");
+        setTokenBalance(1);
+        setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
+        setHasMinTokens(true);
+        setHolderRank(null);
+        setIsCheckingTokens(false);
+        return;
+      }
+
+      const options = {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'X-API-Key': MORALIS_API_KEY
+        }
+      };
+
+      const balanceResponse = await fetch(
+        `https://solana-gateway.moralis.io/account/mainnet/${walletAddress.toString()}/tokens`,
+        options
+      );
+
+      if (!balanceResponse.ok) {
+        throw new Error(`Moralis balance API error: ${balanceResponse.status}`);
+      }
+
+      const balanceData = await balanceResponse.json();
+      console.log("💼 Wallet tokens:", balanceData);
+
+      const tokenData = balanceData.tokens?.find(
+        t => t.mint === TOKEN_ADDRESS
+      );
+
+      if (!tokenData) {
+        console.log("❌ Token not found in wallet");
+        setTokenBalance(0);
+        setTokenValueSOL(0);
+        setHasMinTokens(false);
+        setHolderRank(null);
+        setIsCheckingTokens(false);
+        return;
+      }
+
+      const balance = parseFloat(tokenData.amount) / Math.pow(10, tokenData.decimals);
+      const valueSOL = balance * priceSOL;
+
+      console.log("💰 Token holdings:", {
+        balance: balance.toFixed(4),
+        tokenPriceSOL: priceSOL.toFixed(8),
+        valueSOL: valueSOL.toFixed(4),
+        meetsMinimum: valueSOL >= MIN_TOKEN_VALUE_SOL
+      });
+
+      setTokenBalance(balance);
+      setTokenValueSOL(valueSOL);
+      setHasMinTokens(valueSOL >= MIN_TOKEN_VALUE_SOL);
+
+      const holders = await fetchTokenHolders();
+      
+      if (holders.length > 0) {
+        const sortedHolders = holders
+          .map(h => ({
+            address: h.owner,
+            balance: parseFloat(h.amount) / Math.pow(10, h.decimals || 9)
+          }))
+          .sort((a, b) => b.balance - a.balance);
+
+        const userRank = sortedHolders.findIndex(
+          h => h.address === walletAddress.toString()
+        ) + 1;
+
+        console.log("🏆 Holder rank:", userRank, "out of", sortedHolders.length);
+        setHolderRank(userRank > 0 ? userRank : null);
+      }
+
+      setIsCheckingTokens(false);
+    } catch (error) {
+      console.error("❌ Token check failed:", error);
+      console.log("⚠️ Using fallback - allowing play");
+      setTokenBalance(1);
+      setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
+      setHasMinTokens(true);
+      setIsCheckingTokens(false);
+    }
+  };
+
+  // Check tokens when wallet connects
+  useEffect(() => {
+    if (connected && publicKey) {
+      checkTokenHoldings(publicKey);
+    } else {
+      setTokenBalance(0);
+      setTokenValueSOL(0);
+      setHasMinTokens(false);
+      setHolderRank(null);
+    }
+  }, [connected, publicKey]);
 
   // Fetch Game State and Prize Pool
   useEffect(() => {
@@ -205,7 +396,8 @@ const App = () => {
           const state = await program.account.gameState.fetch(gamePda);
           console.log("🎮 Game state:", {
             totalSpins: state.totalSpins.toString(),
-            totalJackpots: state.totalJackpots.toString()
+            totalJackpots: state.totalJackpots.toString(),
+            totalPaidOut: (Number(state.totalPaidOut?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
           });
           setGameState(state);
 
@@ -232,7 +424,7 @@ const App = () => {
 
     const updateTimer = () => {
       const now = Math.floor(Date.now() / 1000);
-      const lastReset = playerAccount.lastSpinReset.toNumber();
+      const lastReset = Number(playerAccount.lastSpinReset?.toString() || 0);
       const timeSinceReset = now - lastReset;
       const timeRemaining = 86400 - timeSinceReset;
 
@@ -274,7 +466,7 @@ const App = () => {
           extraSpins: acc.extraSpins,
           totalSpins: acc.totalSpins,
           totalWins: acc.totalWins,
-          totalWinnings: (acc.totalWinnings.toNumber() / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
+          totalWinnings: (Number(acc.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
         });
         setPlayerAccount(acc);
         setDailySpinsLeft(acc.dailySpinLimit - acc.dailySpinsUsed);
@@ -292,13 +484,6 @@ const App = () => {
     return () => clearInterval(interval);
   }, [program, publicKey]);
 
-  // Copy contract address to clipboard
-  const copyContractAddress = () => {
-    navigator.clipboard.writeText(PROGRAM_ID.toString());
-    setCopiedContract(true);
-    setTimeout(() => setCopiedContract(false), 2000);
-  };
-
   // Download PDF
   const downloadPDF = () => {
     const link = document.createElement('a');
@@ -311,13 +496,18 @@ const App = () => {
 
   // Register Player
   const registerPlayer = async () => {
-    if (!program || !publicKey || playerAccount || !hasEnoughSOL) {
+    if (!program || !publicKey || playerAccount) {
       console.log("⚠️ Cannot register:", { 
         hasProgram: !!program, 
         hasPublicKey: !!publicKey, 
-        alreadyRegistered: !!playerAccount,
-        hasEnoughSOL
+        alreadyRegistered: !!playerAccount
       });
+      return;
+    }
+
+    if (!hasMinTokens) {
+      setErrorMessage(`Need at least ${MIN_TOKEN_VALUE_SOL} SOL worth of tokens!`);
+      setTimeout(() => setErrorMessage(""), 5000);
       return;
     }
 
@@ -335,14 +525,17 @@ const App = () => {
         PROGRAM_ID
       );
 
+      const rank = holderRank || 101;
+
       console.log("📋 Registration params:", {
-        holderRank,
-        playerPda: playerPda.toString(),
-        gamePda: gamePda.toString()
+        holderRank: rank,
+        hasMinTokens,
+        tokenBalance: tokenBalance.toFixed(4),
+        tokenValueSOL: tokenValueSOL.toFixed(4)
       });
 
       const tx = await program.methods
-        .registerPlayer(holderRank)
+        .registerPlayer(rank, hasMinTokens)
         .accounts({
           gameState: gamePda,
           playerAccount: playerPda,
@@ -374,12 +567,6 @@ const App = () => {
   const buyExtraSpin = async () => {
     if (!program || !publicKey || !playerAccount) {
       console.log("⚠️ Cannot buy spin - not ready");
-      return;
-    }
-
-    if (solBalance < SPIN_COST_SOL) {
-      setErrorMessage(`Need ${SPIN_COST_SOL} SOL for extra spin!`);
-      setTimeout(() => setErrorMessage(""), 4000);
       return;
     }
 
@@ -417,7 +604,7 @@ const App = () => {
     }
   };
 
-  // Spin Function - NOW WITH DYNAMIC RESULTS FROM BLOCKCHAIN
+  // Spin Function
   const play = async () => {
     if (!program || !publicKey || !playerAccount) {
       console.log("⚠️ Cannot spin - not ready");
@@ -471,8 +658,8 @@ const App = () => {
           const gameAccount = await connection.getAccountInfo(gamePda);
           const newPool = gameAccount ? gameAccount.lamports / LAMPORTS_PER_SOL : 0;
 
-          const previousWinnings = playerAccount?.totalWinnings?.toNumber() || 0;
-          const currentWinnings = freshPlayer.totalWinnings?.toNumber() || 0;
+          const previousWinnings = Number(playerAccount?.totalWinnings?.toString() || 0);
+          const currentWinnings = Number(freshPlayer.totalWinnings?.toString() || 0);
           const wonLamports = currentWinnings - previousWinnings;
           const wonSOL = wonLamports / LAMPORTS_PER_SOL;
 
@@ -569,6 +756,7 @@ const App = () => {
     results[1] === zeroImage &&
     results[2] === twoImage;
 
+
   return (
     <div style={styles.page}>
       <div style={styles.backgroundLayer}></div>
@@ -576,7 +764,7 @@ const App = () => {
       {showConfetti && <Confetti />}
 
       <div style={styles.headerSection}>
-        <h2 style={styles.headerTitle}>🎰 Devnet Test Mode - SOL Only 🎰</h2>
+        <h2 style={styles.headerTitle}>🎰 Token-Gated Slot Casino 🎰</h2>
       </div>
 
       <div style={styles.topButtons}>
@@ -585,37 +773,63 @@ const App = () => {
 
       <div style={styles.contractBox}>
         <div style={styles.contractLabel}>📜 Contract Address</div>
-
         <div style={styles.contractAddress}>
-            CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY
-
+          {PROGRAM_ID.toString().substring(0, 20)}...
         </div>
-
         <div style={styles.contractActions}>
           <button
             style={styles.actionButton}
             onClick={() => {
-              navigator.clipboard.writeText("CfwgZDQ...i7x347CY");
+              navigator.clipboard.writeText(PROGRAM_ID.toString());
             }}
           >
             📋 Copy
           </button>
-
-          <a
-            href="/whitepaper.pdf"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ textDecoration: "none" }}
-          >
-            <button style={styles.pdfButton}>
-              📄 Whitepaper
-            </button>
-          </a>
+          <button onClick={downloadPDF} style={styles.pdfButton}>
+            📄 Whitepaper
+          </button>
         </div>
       </div>
 
-
       {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
+
+      {connected && (
+        <div style={styles.tokenInfoBox}>
+          <div style={styles.tokenInfoLabel}>
+            {isCheckingTokens ? "🔄 Checking Token Holdings..." : "💎 Token Status"}
+          </div>
+          <div style={styles.tokenInfoGrid}>
+            <div style={styles.tokenInfoItem}>
+              <span style={styles.tokenInfoKey}>Balance:</span>
+              <span style={styles.tokenInfoValue}>{tokenBalance.toFixed(2)} tokens</span>
+            </div>
+            <div style={styles.tokenInfoItem}>
+              <span style={styles.tokenInfoKey}>Value:</span>
+              <span style={styles.tokenInfoValue}>{tokenValueSOL.toFixed(4)} SOL</span>
+            </div>
+            <div style={styles.tokenInfoItem}>
+              <span style={styles.tokenInfoKey}>Rank:</span>
+              <span style={styles.tokenInfoValue}>
+                {holderRank ? `#${holderRank}` : "Checking..."}
+              </span>
+            </div>
+            <div style={styles.tokenInfoItem}>
+              <span style={styles.tokenInfoKey}>Qualified:</span>
+              <span style={{
+                ...styles.tokenInfoValue,
+                color: hasMinTokens ? "#4CAF50" : "#FF1744"
+              }}>
+                {hasMinTokens ? "✅ Yes" : "❌ No"}
+              </span>
+            </div>
+          </div>
+          {!hasMinTokens && (
+            <div style={styles.tokenWarning}>
+              ⚠️ Need {MIN_TOKEN_VALUE_SOL} SOL worth of {TOKEN_ADDRESS.substring(0, 8)}... tokens to play
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={styles.container}>
         <div style={styles.slotMachine}>
@@ -642,12 +856,6 @@ const App = () => {
               </div>
             </div>
           </div>
-
-          {connected && (
-            <div style={styles.rankBadge}>
-              💰 SOL Balance: {solBalance.toFixed(4)} SOL | Test Rank: #{holderRank}
-            </div>
-          )}
 
           {connected && playerAccount && (
             <div style={styles.statsBadge}>
@@ -682,14 +890,15 @@ const App = () => {
             {!playerAccount && connected ? (
               <button
                 onClick={registerPlayer}
-                disabled={isRegistering || !hasEnoughSOL}
+                disabled={isRegistering || !hasMinTokens || isCheckingTokens}
                 style={{
                   ...styles.registerButton,
-                  opacity: isRegistering || !hasEnoughSOL ? 0.6 : 1,
+                  opacity: isRegistering || !hasMinTokens || isCheckingTokens ? 0.6 : 1,
                 }}
               >
                 {isRegistering ? "REGISTERING..." : 
-                 !hasEnoughSOL ? `NEED ${MIN_SOL_BALANCE} SOL` : 
+                 isCheckingTokens ? "CHECKING TOKENS..." :
+                 !hasMinTokens ? "INSUFFICIENT TOKENS" : 
                  "REGISTER TO PLAY"}
               </button>
             ) : (
@@ -714,7 +923,7 @@ const App = () => {
                       opacity: isBuyingSpin ? 0.6 : 1,
                     }}
                   >
-                    {isBuyingSpin ? "BUYING..." : "BUY EXTRA SPIN"}
+                    {isBuyingSpin ? "BUYING..." : `BUY SPIN (${SPIN_COST_SOL} SOL)`}
                   </button>
                 )}
               </>
@@ -723,10 +932,12 @@ const App = () => {
 
           {connected && (
             <div style={styles.infoText}>
-              💡 Daily spins reset every 24 hours. Extra spins never expire!<br/>
+              💡 Holder Benefits:<br/>
+              🥇 Top 10: 100 daily spins | 🥈 Top 11-50: 50 spins | 🥉 Top 51-100: 10 spins<br/>
+              💰 Minimum {MIN_TOKEN_VALUE_SOL} SOL worth of tokens required<br/>
               🎯 Win up to 80% of the prize pool when you hit 4-0-2!<br/>
-              🔥 Extra spin costs {SPIN_COST_SOL} SOL<br/>
-              ⚠️ DEVNET TESTING MODE - Using SOL instead of tokens
+              🔥 Extra spins cost {SPIN_COST_SOL} SOL and never expire<br/>
+              ⚡ Daily spins reset every 24 hours
             </div>
           )}
         </div>
@@ -746,10 +957,7 @@ const App = () => {
   );
 };
 
-
-// ------------------------
 // Styles
-// ------------------------
 const styles = {
   page: {
     minHeight: "100vh",
@@ -760,38 +968,68 @@ const styles = {
     overflowX: "hidden",
     position: "relative",
   },
+  backgroundLayer: {
+    position: "fixed",
+    inset: 0,
+    backgroundImage: `linear-gradient(rgba(60,10,10,0.35), rgba(0,0,0,0.75)), url(${lotteryBg})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+    filter: "blur(6px)",
+    zIndex: -1,
+  },
+  headerSection: {
+    padding: "6px 0",
+  },
+  headerTitle: {
+    color: "#FFD700",
+    fontSize: "1.3rem",
+    fontWeight: "700",
+    letterSpacing: "0.5px",
+    textAlign: "center",
+  },
+  topButtons: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: "8px",
+  },
+  walletButton: {
+    padding: "10px 15px",
+    fontSize: "0.9rem",
+    borderRadius: "10px",
+    background: "#000",
+    color: "#FFD700",
+    fontWeight: "700",
+    border: "2px solid #FFD700",
+  },
   contractBox: {
-  background: "#000",
-  border: "2px solid #FFD700",
-  borderRadius: "12px",
-  padding: "10px 12px",
-  margin: "8px 0",
-  width: "100%",
-  maxWidth: "420px",
-  textAlign: "center",
-},
-
-contractLabel: {
-  color: "#FFD700",
-  fontSize: "0.7rem",
-  fontWeight: "700",
-  marginBottom: "4px",
-},
-
-contractAddress: {
-  color: "#fff",
-  fontSize: "0.8rem",
-  wordBreak: "break-all",
-  marginBottom: "8px",
-},
-
+    background: "#000",
+    border: "2px solid #FFD700",
+    borderRadius: "12px",
+    padding: "10px 12px",
+    margin: "8px 0",
+    width: "100%",
+    maxWidth: "420px",
+    textAlign: "center",
+  },
+  contractLabel: {
+    color: "#FFD700",
+    fontSize: "0.7rem",
+    fontWeight: "700",
+    marginBottom: "4px",
+  },
+  contractAddress: {
+    color: "#fff",
+    fontSize: "0.8rem",
+    wordBreak: "break-all",
+    marginBottom: "8px",
+  },
   contractActions: {
     display: "flex",
     gap: "8px",
     justifyContent: "center",
     flexWrap: "wrap",
   },
-
   actionButton: {
     padding: "6px 14px",
     fontSize: "0.75rem",
@@ -802,7 +1040,6 @@ contractAddress: {
     fontWeight: "800",
     cursor: "pointer",
   },
-
   pdfButton: {
     padding: "6px 14px",
     fontSize: "0.75rem",
@@ -813,46 +1050,55 @@ contractAddress: {
     fontWeight: "700",
     cursor: "pointer",
   },
-
-  backgroundLayer: {
-    position: "fixed",
-    inset: 0,
-    backgroundImage: `linear-gradient(rgba(60,10,10,0.35), rgba(0,0,0,0.75)), url(${lotteryBg})`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    filter: "blur(6px)",
-    zIndex: -1,
+  tokenInfoBox: {
+    background: "#000",
+    border: "2px solid #9C27B0",
+    borderRadius: "12px",
+    padding: "12px",
+    margin: "8px 0",
+    width: "100%",
+    maxWidth: "420px",
   },
-
-  headerSection: {
-    padding: "6px 0",
-  },
-
-  headerTitle: {
-    color: "#FFD700",
-    fontSize: "1.3rem",
+  tokenInfoLabel: {
+    color: "#9C27B0",
+    fontSize: "0.8rem",
     fontWeight: "700",
-    letterSpacing: "0.5px",
+    marginBottom: "8px",
     textAlign: "center",
   },
-
-  topButtons: {
-    width: "100%",
+  tokenInfoGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
+  },
+  tokenInfoItem: {
+    background: "rgba(156, 39, 176, 0.1)",
+    padding: "6px",
+    borderRadius: "6px",
     display: "flex",
-    justifyContent: "center",
-    marginBottom: "8px",
+    flexDirection: "column",
+    gap: "2px",
   },
-
-  walletButton: {
-    padding: "10px 15px",
-    fontSize: "0.9rem",
-    borderRadius: "10px",
-    background: "#000",
-    color: "#FFD700",
+  tokenInfoKey: {
+    color: "#9C27B0",
+    fontSize: "0.65rem",
+    fontWeight: "600",
+  },
+  tokenInfoValue: {
+    color: "#fff",
+    fontSize: "0.85rem",
     fontWeight: "700",
-    border: "2px solid #FFD700",
   },
-
+  tokenWarning: {
+    marginTop: "8px",
+    padding: "6px",
+    background: "rgba(255, 23, 68, 0.15)",
+    border: "1px solid #FF1744",
+    borderRadius: "6px",
+    color: "#FF1744",
+    fontSize: "0.7rem",
+    textAlign: "center",
+  },
   container: {
     width: "100%",
     display: "flex",
@@ -860,7 +1106,6 @@ contractAddress: {
     padding: "0 10px",
     boxSizing: "border-box",
   },
-
   slotMachine: {
     width: "100%",
     maxWidth: "500px",
@@ -870,14 +1115,12 @@ contractAddress: {
     border: "2px solid #FFD700",
     textAlign: "center",
   },
-
   displayPanel: {
     display: "grid",
     gridTemplateColumns: "repeat(2, 1fr)",
     gap: "6px",
     marginBottom: "10px",
   },
-
   infoBox: {
     background: "#000",
     padding: "6px",
@@ -885,30 +1128,16 @@ contractAddress: {
     border: "1.5px solid #FFD700",
     textAlign: "center",
   },
-
   infoLabel: {
     color: "#FFD700",
     fontSize: "0.6rem",
     fontWeight: "700",
   },
-
   infoValue: {
     color: "#fff",
     fontSize: "0.9rem",
     fontWeight: "700",
   },
-
-  rankBadge: {
-    margin: "8px 0",
-    padding: "8px",
-    background: "#000",
-    border: "2px solid #FFD700",
-    borderRadius: "10px",
-    color: "#FFD700",
-    fontWeight: "700",
-    fontSize: "0.85rem",
-  },
-
   statsBadge: {
     margin: "8px 0",
     padding: "8px",
@@ -919,7 +1148,6 @@ contractAddress: {
     fontWeight: "700",
     fontSize: "0.8rem",
   },
-
   timerBadge: {
     margin: "8px 0",
     padding: "8px",
@@ -930,14 +1158,12 @@ contractAddress: {
     fontWeight: "700",
     fontSize: "0.85rem",
   },
-
   title: {
     color: "#FFD700",
     fontSize: "1.35rem",
     margin: "8px 0",
     fontWeight: "800",
   },
-
   reelsSection: {
     background: "#000",
     padding: "10px",
@@ -945,17 +1171,14 @@ contractAddress: {
     border: "2px solid #FFD700",
     marginBottom: "10px",
   },
-
   reelsRow: {
     display: "flex",
     justifyContent: "center",
     gap: "8px",
   },
-
   reelContainer: {
     position: "relative",
   },
-
   reelBox: {
     width: "85px",
     height: "85px",
@@ -965,12 +1188,10 @@ contractAddress: {
     border: "2px solid #FFD700",
     position: "relative",
   },
-
   reelStrip: {
     display: "flex",
     flexDirection: "column",
   },
-
   symbol: {
     width: "100%",
     height: "85px",
@@ -979,7 +1200,6 @@ contractAddress: {
     justifyContent: "center",
     background: "#0a0a0a",
   },
-
   finalNumber: {
     position: "absolute",
     inset: 0,
@@ -988,7 +1208,6 @@ contractAddress: {
     alignItems: "center",
     justifyContent: "center",
   },
-
   controlPanel: {
     display: "flex",
     gap: "10px",
@@ -996,7 +1215,6 @@ contractAddress: {
     flexWrap: "wrap",
     marginTop: "14px",
   },
-
   spinButton: {
     padding: "12px 26px",
     fontSize: "1.15rem",
@@ -1008,7 +1226,6 @@ contractAddress: {
     cursor: "pointer",
     boxShadow: "0 0 12px rgba(255,45,85,0.6)",
   },
-
   buySpinButton: {
     padding: "10px 18px",
     fontSize: "0.95rem",
@@ -1017,8 +1234,8 @@ contractAddress: {
     border: "2px solid #FFD700",
     color: "#fff",
     fontWeight: "700",
+    cursor: "pointer",
   },
-
   registerButton: {
     padding: "12px 22px",
     fontSize: "1rem",
@@ -1027,8 +1244,8 @@ contractAddress: {
     border: "2px solid #FFD700",
     color: "#fff",
     fontWeight: "800",
+    cursor: "pointer",
   },
-
   winnerBanner: {
     margin: "8px 0",
     padding: "8px",
@@ -1038,7 +1255,6 @@ contractAddress: {
     borderRadius: "8px",
     fontWeight: "900",
   },
-
   infoText: {
     marginTop: "12px",
     fontSize: "0.78rem",
@@ -1049,7 +1265,6 @@ contractAddress: {
     padding: "10px",
     borderRadius: "8px",
   },
-
   errorMessage: {
     color: "#FF1744",
     fontWeight: "700",
@@ -1060,8 +1275,8 @@ contractAddress: {
     background: "rgba(255,23,68,0.15)",
     borderRadius: "10px",
     border: "2px solid #FF1744",
+    maxWidth: "420px",
   },
-
   confettiContainer: {
     position: "fixed",
     inset: 0,
@@ -1069,13 +1284,11 @@ contractAddress: {
     zIndex: 9999,
     overflow: "hidden",
   },
-
   confettiPiece: {
     position: "absolute",
     top: "-20px",
     animation: "confettiFall linear infinite",
   },
 };
-
 
 export default App;

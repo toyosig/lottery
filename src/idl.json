@@ -5,11 +5,14 @@
     "version": "0.1.0",
     "spec": "0.1.0"
   },
+  "docs": [
+    "========================= PROGRAM ========================="
+  ],
   "instructions": [
     {
       "name": "buy_extra_spin",
       "docs": [
-        "Buy extra spin by paying SOL - FIXED with System Program CPI"
+        "Buy extra spin - pays in SOL (token payment handled off-chain)"
       ],
       "discriminator": [
         74,
@@ -125,9 +128,49 @@
       ]
     },
     {
+      "name": "get_game_stats",
+      "docs": [
+        "Get recent winners"
+      ],
+      "discriminator": [
+        17,
+        227,
+        112,
+        24,
+        150,
+        173,
+        94,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "game_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [],
+      "returns": {
+        "defined": {
+          "name": "GameStats"
+        }
+      }
+    },
+    {
       "name": "register_player",
       "docs": [
-        "Register/login - updates player rank and eligibility each time"
+        "Register/login - requires token verification off-chain"
       ],
       "discriminator": [
         242,
@@ -142,9 +185,6 @@
       "accounts": [
         {
           "name": "game_state",
-          "docs": [
-            "Game state PDA - auto-creates on first use"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -162,9 +202,6 @@
         },
         {
           "name": "player_account",
-          "docs": [
-            "Player account PDA - auto-creates on first login"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -199,14 +236,18 @@
       "args": [
         {
           "name": "holder_rank",
-          "type": "u8"
+          "type": "u16"
+        },
+        {
+          "name": "has_min_tokens",
+          "type": "bool"
         }
       ]
     },
     {
       "name": "spin",
       "docs": [
-        "Main spin function - Improved RNG based on multiple entropy sources"
+        "Main spin function"
       ],
       "discriminator": [
         87,
@@ -221,9 +262,6 @@
       "accounts": [
         {
           "name": "game_state",
-          "docs": [
-            "Game state - should already exist, no init needed"
-          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -347,13 +385,26 @@
         171,
         237
       ]
+    },
+    {
+      "name": "WinnerEvent",
+      "discriminator": [
+        80,
+        230,
+        123,
+        48,
+        43,
+        207,
+        255,
+        183
+      ]
     }
   ],
   "errors": [
     {
       "code": 6000,
-      "name": "InsufficientBalance",
-      "msg": "Insufficient SOL balance. Need at least 0.1 SOL"
+      "name": "InsufficientTokens",
+      "msg": "Insufficient tokens. Need at least 0.04 SOL worth of tokens"
     },
     {
       "code": 6001,
@@ -362,16 +413,11 @@
     },
     {
       "code": 6002,
-      "name": "InvalidRank",
-      "msg": "Invalid holder rank (must be 1-100)"
-    },
-    {
-      "code": 6003,
       "name": "PlayerNotRegistered",
       "msg": "Player not registered. Call register_player first."
     },
     {
-      "code": 6004,
+      "code": 6003,
       "name": "AmountTooSmall",
       "msg": "Amount too small (minimum 0.001 SOL)"
     }
@@ -412,6 +458,37 @@
           {
             "name": "total_jackpots",
             "type": "u64"
+          },
+          {
+            "name": "total_paid_out",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameStats",
+      "docs": [
+        "========================= RETURN TYPES ========================="
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "total_spins",
+            "type": "u64"
+          },
+          {
+            "name": "total_jackpots",
+            "type": "u64"
+          },
+          {
+            "name": "total_paid_out",
+            "type": "u64"
+          },
+          {
+            "name": "current_prize_pool",
+            "type": "u64"
           }
         ]
       }
@@ -427,7 +504,7 @@
           },
           {
             "name": "holder_rank",
-            "type": "u8"
+            "type": "u16"
           },
           {
             "name": "daily_spin_limit",
@@ -527,6 +604,26 @@
           {
             "name": "player_total_wins",
             "type": "u32"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WinnerEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "win_amount_lamports",
+            "type": "u64"
           },
           {
             "name": "timestamp",
