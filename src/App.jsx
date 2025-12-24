@@ -3,9 +3,10 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, LAMPORTS_PER_SOL, SystemProgram } from "@solana/web3.js";
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
+import * as anchor from "@coral-xyz/anchor";
 import idl from "./idl.json";
 
-// Import images and PDF from assets
+// Import images from assets
 import zeroImage from "./assets/images/zeroImage.png";
 import twoImage from "./assets/images/twoImage.png";
 import fourImage from "./assets/images/fourImage.png";
@@ -13,18 +14,20 @@ import apple from "./assets/images/appleImage.png";
 import giraffe from "./assets/images/giraffeImage.png";
 import santa from "./assets/images/santa.png";
 import lotteryBg from "./assets/images/lotteryBg.jpg";
-import whiteboardPdf from "./assets/whiteboardPdf.pdf"; // Your PDF file
 
-const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
+// ADD THIS LINE - Import the whiteboard PDF
+import whiteboardPdf from "./assets/whiteboard.pdf";
+
+const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrbgJWqLuZ3G7F7u4i7x347CY");
+const RECENT_BLOCKHASHES_SYSVAR = new PublicKey("SysvarRecentB1ockHashes11111111111111111111");
 
 const SPIN_COST_SOL = 0.01;
 const MIN_SOL_BALANCE = 0.1;
 
 const symbols = [santa, twoImage, giraffe, apple, fourImage, zeroImage];
-
 const isImage = (symbol) => typeof symbol === "string";
 
-// Map reel values (0-9) to symbols
+// Map blockchain reel values (0-9) to our symbols
 const mapReelToSymbol = (reelValue) => {
   const mapping = {
     0: zeroImage,
@@ -152,7 +155,7 @@ const App = () => {
         preflightCommitment: "confirmed"
       });
 
-      const prog = new Program(idl, PROGRAM_ID, provider);
+      const prog = new Program(idl, provider);
       console.log("✅ Program initialized:", prog.programId.toString());
       setProgram(prog);
     } catch (error) {
@@ -175,7 +178,7 @@ const App = () => {
         setSolBalance(solBal);
         setHasEnoughSOL(solBal >= MIN_SOL_BALANCE);
       } catch (e) {
-        console.log("⚠️ Failed to fetch balance:", e);
+        console.log("⚠️ Failed to fetch balance:", e.message);
         setSolBalance(0);
         setHasEnoughSOL(false);
       }
@@ -200,16 +203,21 @@ const App = () => {
         const gameAccount = await connection.getAccountInfo(gamePda);
         if (gameAccount) {
           const state = await program.account.gameState.fetch(gamePda);
-          console.log("🎮 Game state:", state);
+          console.log("🎮 Game state:", {
+            totalSpins: state.totalSpins.toString(),
+            totalJackpots: state.totalJackpots.toString()
+          });
           setGameState(state);
 
           const lamports = gameAccount.lamports;
           const poolSol = lamports / LAMPORTS_PER_SOL;
           console.log(`💰 Prize pool: ${poolSol.toFixed(4)} SOL`);
           setPrizePool(poolSol);
+        } else {
+          console.log("⚠️ Game state not initialized yet");
         }
       } catch (e) {
-        console.log("⚠️ Game state fetch error:", e);
+        console.log("⚠️ Game state fetch error:", e.message);
       }
     };
 
@@ -259,10 +267,18 @@ const App = () => {
         );
 
         const acc = await program.account.playerAccount.fetch(playerPda);
-        console.log("👤 Player account:", acc);
+        console.log("👤 Player account:", {
+          rank: acc.holderRank,
+          dailyLimit: acc.dailySpinLimit,
+          dailyUsed: acc.dailySpinsUsed,
+          extraSpins: acc.extraSpins,
+          totalSpins: acc.totalSpins,
+          totalWins: acc.totalWins,
+          totalWinnings: (acc.totalWinnings.toNumber() / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
+        });
         setPlayerAccount(acc);
         setDailySpinsLeft(acc.dailySpinLimit - acc.dailySpinsUsed);
-        setExtraSpins(acc.extraSpins.toNumber());
+        setExtraSpins(acc.extraSpins);
       } catch (e) {
         console.log("⚠️ Player not registered");
         setPlayerAccount(null);
@@ -301,9 +317,13 @@ const App = () => {
           playerAccount: playerPda,
           player: publicKey,
         })
-        .rpc();
+        .rpc({
+          skipPreflight: false,
+          commitment: "confirmed"
+        });
 
       console.log("✅ Registration successful! Tx:", tx);
+      
       await new Promise(resolve => setTimeout(resolve, 3000));
       setIsRegistering(false);
     } catch (err) {
@@ -325,6 +345,7 @@ const App = () => {
     }
 
     setIsBuyingSpin(true);
+    console.log("🛒 Buying extra spin...");
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
@@ -373,6 +394,7 @@ const App = () => {
     setShowConfetti(false);
     setSpinning([true, true, true]);
     setResults([]);
+    console.log("🎰 Spinning...");
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
@@ -393,6 +415,7 @@ const App = () => {
           gameState: gamePda,
           playerAccount: playerPda,
           player: publicKey,
+          recentBlockhashes: RECENT_BLOCKHASHES_SYSVAR,
           systemProgram: SystemProgram.programId
         })
         .rpc();
@@ -427,7 +450,12 @@ const App = () => {
             );
           }
 
-          return { results: finalResults, wonSOL, freshPlayer, newPool };
+          return {
+            results: finalResults,
+            wonSOL,
+            freshPlayer,
+            newPool
+          };
         } catch (e) {
           console.error("❌ Failed to fetch results:", e);
           let fallbackResults;
@@ -442,7 +470,12 @@ const App = () => {
             fallbackResults[1] === zeroImage && 
             fallbackResults[2] === twoImage
           );
-          return { results: fallbackResults, wonSOL: 0, freshPlayer: playerAccount, newPool: prizePool };
+          return {
+            results: fallbackResults,
+            wonSOL: 0,
+            freshPlayer: playerAccount,
+            newPool: prizePool
+          };
         }
       };
 
@@ -463,7 +496,7 @@ const App = () => {
         setResults(resultData.results);
 
         setDailySpinsLeft(resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
-        setExtraSpins(resultData.freshPlayer.extraSpins.toNumber());
+        setExtraSpins(resultData.freshPlayer.extraSpins);
         setPrizePool(resultData.newPool);
 
         if (resultData.wonSOL > 0) {
@@ -488,6 +521,16 @@ const App = () => {
     results[1] === zeroImage &&
     results[2] === twoImage;
 
+  // Function to trigger PDF download
+  const downloadWhiteboard = () => {
+    const link = document.createElement("a");
+    link.href = whiteboardPdf;
+    link.download = "Whiteboard.pdf"; // filename when downloaded
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={styles.page}>
       <div style={styles.backgroundLayer}></div>
@@ -495,23 +538,21 @@ const App = () => {
       {showConfetti && <Confetti />}
 
       <div style={styles.headerSection}>
-        <h2 style={styles.headerTitle}>🎰 Solana Slot Casino 🎰</h2>
-        <div style={styles.programIdDisplay}>
-          Program ID: <code>{PROGRAM_ID.toBase58()}</code>
+        <h2 style={styles.headerTitle}>🎰 Devnet Test Mode - SOL Only 🎰</h2>
+        
+        {/* NEW: Program ID Display */}
+        <div style={styles.programIdBox}>
+          Program ID: <code style={styles.programIdCode}>{PROGRAM_ID.toBase58()}</code>
         </div>
+
+        {/* NEW: Whiteboard PDF Download Button */}
+        <button onClick={downloadWhiteboard} style={styles.downloadButton}>
+          📄 Download Whiteboard PDF
+        </button>
       </div>
 
       <div style={styles.topButtons}>
         <WalletMultiButton style={{ ...styles.walletButton, height: "50px" }} />
-        <a
-          href={whiteboardPdf}
-          download="Slot_Casino_Whiteboard.pdf"
-          style={{ textDecoration: "none" }}
-        >
-          <button style={styles.whiteboardButton}>
-            📄 Download Whiteboard PDF
-          </button>
-        </a>
       </div>
 
       {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
@@ -613,17 +654,25 @@ const App = () => {
                       opacity: isBuyingSpin ? 0.6 : 1,
                     }}
                   >
-                    {isBuyingSpin ? "BUYING..." : "BUY EXTRA SPIN (0.01 SOL)"}
+                    {isBuyingSpin ? "BUYING..." : "BUY EXTRA SPIN"}
                   </button>
                 )}
               </>
             )}
           </div>
 
+          {connected && (
+            <div style={styles.infoText}>
+              💡 Daily spins reset every 24 hours. Extra spins never expire!<br/>
+              🎯 Win up to 80% of the prize pool when you hit 4-0-2!<br/>
+              🔥 Extra spin costs {SPIN_COST_SOL} SOL<br/>
+              ⚠️ DEVNET TESTING MODE - Using SOL instead of tokens
+            </div>
+          )}
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes spin {
           0% { transform: translateY(0px); }
           100% { transform: translateY(-${symbols.length * 110}px); }
@@ -642,6 +691,53 @@ const App = () => {
 // ------------------------
 const styles = {
   page: { height: "100vh", width: "100vw", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  headerSection: { padding: "10px 0", textAlign: "center" },
+  headerTitle: { color: "#FFD700", fontSize: "clamp(1rem, 3vw, 1.6rem)", margin: "5px 0" },
+
+  // NEW styles for Program ID and Download button
+  programIdBox: { margin: "10px 0", color: "#FFF", fontSize: "0.9rem" },
+  programIdCode: { background: "#000", padding: "4px 8px", borderRadius: "6px", color: "#4CAF50", fontFamily: "monospace" },
+  downloadButton: { 
+    margin: "10px 0", 
+    padding: "10px 20px", 
+    fontSize: "1rem", 
+    background: "linear-gradient(135deg, #2196F3, #1976D2)", 
+    color: "white", 
+    border: "none", 
+    borderRadius: "30px", 
+    cursor: "pointer", 
+    fontWeight: "bold",
+    boxShadow: "0 4px 10px rgba(0,0,0,0.3)"
+  },
+
+  container: { flex: 1, width: "100%", display: "flex", justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  slotMachine: { background: "linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 100%)", borderRadius: "20px", padding: "15px", border: "4px solid #FFD700", width: "80%", maxWidth: "600px", maxHeight: "75vh", overflow: "auto", textAlign: "center" },
+  displayPanel: { display: "flex", justifyContent: "space-around", marginBottom: "10px", gap: "8px", flexWrap: "wrap" },
+  infoBox: { background: "#000", padding: "8px 12px", borderRadius: "10px", border: "2px solid #FFD700", textAlign: "center", minWidth: "90px" },
+  infoLabel: { color: "#FFD700", fontSize: "0.7rem", fontWeight: "bold" },
+  infoValue: { color: "#FFF", fontSize: "1rem", fontWeight: "bold" },
+  title: { fontSize: "1.5rem", color: "#FFD700", marginBottom: "10px" },
+  reelsSection: { background: "#000", padding: "10px", borderRadius: "15px", border: "3px solid #FFD700", marginBottom: "10px" },
+  reelsRow: { display: "flex", justifyContent: "center", gap: "10px" },
+  reelContainer: { position: "relative" },
+  reelBox: { width: "clamp(60px, 15vw, 110px)", height: "clamp(60px, 15vw, 110px)", background: "#000", borderRadius: "10px", overflow: "hidden", border: "3px solid #FFD700" },
+  reelStrip: { display: "flex", flexDirection: "column" },
+  symbol: { width: "100%", height: "clamp(60px, 15vw, 110px)", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0a" },
+  finalNumber: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0, 0, 0, 0.85)", display: "flex", justifyContent: "center", alignItems: "center" },
+  controlPanel: { display: "flex", gap: "10px", justifyContent: "center", marginTop: "20px", flexWrap: "wrap" },
+  spinButton: { padding: "12px 20px", fontSize: "1.2rem", borderRadius: "50%", background: "linear-gradient(135deg, #FF1744 0%, #C51162 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "clamp(90px, 20vw, 150px)" },
+  registerButton: { padding: "12px 20px", fontSize: "1.1rem", borderRadius: "50%", background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "clamp(120px, 25vw, 180px)" },
+  buySpinButton: { padding: "10px 18px", fontSize: "1rem", borderRadius: "50%", background: "linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer" },
+  winnerBanner: { margin: "10px 0", padding: "10px", fontSize: "1.2rem", color: "#FFD700", border: "2px solid #FFD700", borderRadius: "10px", fontWeight: "bold" },
+  rankBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FFD700", borderRadius: "10px", color: "#FFD700", fontWeight: "bold", fontSize: "0.9rem" },
+  statsBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #4CAF50", borderRadius: "10px", color: "#4CAF50", fontWeight: "bold", fontSize: "0.85rem" },
+  timerBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FF1744", borderRadius: "10px", color: "#FF1744", fontWeight: "bold" },
+  confettiContainer: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 9999, overflow: "hidden" },
+  confettiPiece: { position: "absolute", top: "-20px", animation: "confettiFall linear infinite" },
+  topButtons: { width: "80%", maxWidth: "600px", display: "flex", justifyContent: "center", marginBottom: "10px" },
+  walletButton: { padding: "10px 15px", fontSize: "0.9rem", borderRadius: "10px", background: "#000", color: "#FFD700", fontWeight: "bold", border: "2px solid #FFD700" },
+  errorMessage: { color: "#FF1744", fontWeight: "bold", marginBottom: "10px", textAlign: "center", fontSize: "1.1rem", padding: "10px", background: "rgba(255, 23, 68, 0.2)", borderRadius: "10px", border: "2px solid #FF1744" },
+  infoText: { marginTop: "15px", fontSize: "0.85rem", color: "#FFF", lineHeight: "1.6", textAlign: "left", padding: "10px", background: "rgba(0,0,0,0.5)", borderRadius: "10px" },
   backgroundLayer: {
     position: "absolute",
     top: 0,
@@ -654,55 +750,6 @@ const styles = {
     filter: "blur(8px)",
     zIndex: -1,
   },
-  headerSection: { padding: "10px 0", textAlign: "center" },
-  headerTitle: { color: "#FFD700", fontSize: "clamp(1.4rem, 4vw, 2rem)", margin: "0 0 8px 0" },
-  programIdDisplay: {
-    color: "#FFD700",
-    fontSize: "0.85rem",
-    background: "rgba(0,0,0,0.6)",
-    padding: "8px 12px",
-    borderRadius: "10px",
-    border: "1px solid #FFD700",
-    wordBreak: "break-all",
-  },
-  topButtons: { width: "80%", maxWidth: "600px", display: "flex", justifyContent: "center", alignItems: "center", gap: "15px", marginBottom: "10px", flexWrap: "wrap" },
-  walletButton: { padding: "10px 15px", fontSize: "0.9rem", borderRadius: "10px", background: "#000", color: "#FFD700", fontWeight: "bold", border: "2px solid #FFD700" },
-  whiteboardButton: {
-    padding: "12px 20px",
-    fontSize: "1rem",
-    borderRadius: "50%",
-    background: "linear-gradient(135deg, #2196F3 0%, #1976D2 100%)",
-    border: "3px solid #FFD700",
-    color: "white",
-    fontWeight: "bold",
-    cursor: "pointer",
-  },
-  container: { flex: 1, width: "100%", display: "flex", justifyContent: "center", alignItems: "center" },
-  slotMachine: { background: "linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 100%)", borderRadius: "20px", padding: "15px", border: "4px solid #FFD700", width: "80%", maxWidth: "600px", textAlign: "center" },
-  displayPanel: { display: "flex", justifyContent: "space-around", marginBottom: "10px", gap: "8px", flexWrap: "wrap" },
-  infoBox: { background: "#000", padding: "8px 12px", borderRadius: "10px", border: "2px solid #FFD700", minWidth: "90px" },
-  infoLabel: { color: "#FFD700", fontSize: "0.7rem", fontWeight: "bold" },
-  infoValue: { color: "#FFF", fontSize: "1rem", fontWeight: "bold" },
-  title: { fontSize: "1.5rem", color: "#FFD700", margin: "15px 0 10px" },
-  reelsSection: { background: "#000", padding: "10px", borderRadius: "15px", border: "3px solid #FFD700", marginBottom: "10px" },
-  reelsRow: { display: "flex", justifyContent: "center", gap: "10px" },
-  reelContainer: { position: "relative" },
-  reelBox: { width: "clamp(60px, 15vw, 110px)", height: "clamp(60px, 15vw, 110px)", background: "#000", borderRadius: "10px", overflow: "hidden", border: "3px solid #FFD700" },
-  reelStrip: { display: "flex", flexDirection: "column" },
-  symbol: { width: "100%", height: "clamp(60px, 15vw, 110px)", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0a" },
-  finalNumber: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0, 0, 0, 0.85)", display: "flex", justifyContent: "center", alignItems: "center" },
-  controlPanel: { display: "flex", gap: "10px", justifyContent: "center", marginTop: "20px", flexWrap: "wrap" },
-  spinButton: { padding: "12px 20px", fontSize: "1.2rem", borderRadius: "50%", background: "linear-gradient(135deg, #FF1744 0%, #C51162 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "150px" },
-  registerButton: { padding: "12px 20px", fontSize: "1.1rem", borderRadius: "50%", background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "180px" },
-  buySpinButton: { padding: "10px 18px", fontSize: "1rem", borderRadius: "50%", background: "linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer" },
-  winnerBanner: { margin: "10px 0", padding: "10px", fontSize: "1.2rem", color: "#FFD700", border: "2px solid #FFD700", borderRadius: "10px", fontWeight: "bold" },
-  rankBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FFD700", borderRadius: "10px", color: "#FFD700", fontWeight: "bold", fontSize: "0.9rem" },
-  statsBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #4CAF50", borderRadius: "10px", color: "#4CAF50", fontWeight: "bold", fontSize: "0.85rem" },
-  timerBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FF1744", borderRadius: "10px", color: "#FF1744", fontWeight: "bold" },
-  confettiContainer: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 9999 },
-  confettiPiece: { position: "absolute", top: "-20px", animation: "confettiFall linear infinite" },
-  errorMessage: { color: "#FF1744", fontWeight: "bold", marginBottom: "10px", textAlign: "center", fontSize: "1.1rem", padding: "10px", background: "rgba(255, 23, 68, 0.2)", borderRadius: "10px", border: "2px solid #FF1744" },
-  infoText: { marginTop: "15px", fontSize: "0.85rem", color: "#FFF", lineHeight: "1.6", padding: "10px", background: "rgba(0,0,0,0.5)", borderRadius: "10px" },
 };
 
 export default App;
