@@ -11,14 +11,11 @@ import zeroImage from "./assets/images/zeroImage.png";
 import twoImage from "./assets/images/twoImage.png";
 import fourImage from "./assets/images/fourImage.png";
 import apple from "./assets/images/appleImage.png";
-import giraffe from "./assets/images/giraffeImage.png";
+import giraffe from "./assets/images/giraffeImage.png"
 import santa from "./assets/images/santa.png";
 import lotteryBg from "./assets/images/lotteryBg.jpg";
 
-// ADD THIS LINE - Import the whiteboard PDF
-import whiteboardPdf from "./assets/whiteboard.pdf";
-
-const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrbgJWqLuZ3G7F7u4i7x347CY");
+const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
 const RECENT_BLOCKHASHES_SYSVAR = new PublicKey("SysvarRecentB1ockHashes11111111111111111111");
 
 const SPIN_COST_SOL = 0.01;
@@ -39,7 +36,7 @@ const mapReelToSymbol = (reelValue) => {
     6: santa,
     7: giraffe,
     8: apple,
-    9: santa
+    9: twoImage
   };
   return mapping[reelValue] || santa;
 };
@@ -294,7 +291,15 @@ const App = () => {
 
   // Register Player
   const registerPlayer = async () => {
-    if (!program || !publicKey || playerAccount || !hasEnoughSOL) return;
+    if (!program || !publicKey || playerAccount || !hasEnoughSOL) {
+      console.log("⚠️ Cannot register:", { 
+        hasProgram: !!program, 
+        hasPublicKey: !!publicKey, 
+        alreadyRegistered: !!playerAccount,
+        hasEnoughSOL
+      });
+      return;
+    }
 
     setIsRegistering(true);
     console.log("📝 Registering player...");
@@ -309,6 +314,12 @@ const App = () => {
         [Buffer.from("game")],
         PROGRAM_ID
       );
+
+      console.log("📋 Registration params:", {
+        holderRank,
+        playerPda: playerPda.toString(),
+        gamePda: gamePda.toString()
+      });
 
       const tx = await program.methods
         .registerPlayer(holderRank)
@@ -328,6 +339,11 @@ const App = () => {
       setIsRegistering(false);
     } catch (err) {
       console.error("❌ Registration failed:", err);
+      
+      if (err.logs) {
+        console.error("Program logs:", err.logs);
+      }
+      
       setErrorMessage(err?.message?.substring(0, 100) || "Registration failed!");
       setTimeout(() => setErrorMessage(""), 5000);
       setIsRegistering(false);
@@ -336,7 +352,10 @@ const App = () => {
 
   // Buy Extra Spin
   const buyExtraSpin = async () => {
-    if (!program || !publicKey || !playerAccount) return;
+    if (!program || !publicKey || !playerAccount) {
+      console.log("⚠️ Cannot buy spin - not ready");
+      return;
+    }
 
     if (solBalance < SPIN_COST_SOL) {
       setErrorMessage(`Need ${SPIN_COST_SOL} SOL for extra spin!`);
@@ -378,9 +397,12 @@ const App = () => {
     }
   };
 
-  // Spin Function
+  // Spin Function - NOW WITH DYNAMIC RESULTS FROM BLOCKCHAIN
   const play = async () => {
-    if (!program || !publicKey || !playerAccount) return;
+    if (!program || !publicKey || !playerAccount) {
+      console.log("⚠️ Cannot spin - not ready");
+      return;
+    }
 
     const totalSpinsAvailable = dailySpinsLeft + extraSpins;
     if (totalSpinsAvailable <= 0) {
@@ -393,7 +415,7 @@ const App = () => {
     setLastWin(0);
     setShowConfetti(false);
     setSpinning([true, true, true]);
-    setResults([]);
+    setResults([]); // Clear results so nothing shows while spinning
     console.log("🎰 Spinning...");
 
     try {
@@ -408,6 +430,7 @@ const App = () => {
       );
 
       const clientSeed = new BN(Math.floor(Math.random() * 1000000000));
+      console.log("🎲 Client seed:", clientSeed.toString());
 
       const tx = await program.methods
         .spin(clientSeed)
@@ -422,6 +445,7 @@ const App = () => {
 
       console.log("✅ Spin transaction sent! Tx:", tx);
 
+      // Fetch blockchain results immediately after transaction
       const fetchResults = async () => {
         try {
           const freshPlayer = await program.account.playerAccount.fetch(playerPda);
@@ -435,8 +459,10 @@ const App = () => {
 
           let finalResults;
           if (wonLamports > 0) {
+            // JACKPOT - winning combination 4-0-2
             finalResults = [fourImage, zeroImage, twoImage];
           } else {
+            // NO WIN - random losing combination
             do {
               finalResults = [
                 symbols[Math.floor(Math.random() * symbols.length)],
@@ -458,6 +484,7 @@ const App = () => {
           };
         } catch (e) {
           console.error("❌ Failed to fetch results:", e);
+          // Fallback to random non-winning combination
           let fallbackResults;
           do {
             fallbackResults = [
@@ -479,29 +506,37 @@ const App = () => {
         }
       };
 
+      // Fetch results immediately
       const resultData = await fetchResults();
 
+      // Animate reels stopping one by one and show results progressively
       setTimeout(() => {
         setSpinning([false, true, true]);
-        setResults([resultData.results[0]]);
+        setResults([resultData.results[0]]); // Show first reel result
       }, 1500);
 
       setTimeout(() => {
         setSpinning([false, false, true]);
-        setResults([resultData.results[0], resultData.results[1]]);
+        setResults([resultData.results[0], resultData.results[1]]); // Show first two reels
       }, 2200);
 
       setTimeout(() => {
         setSpinning([false, false, false]);
-        setResults(resultData.results);
+        setResults(resultData.results); // Show all three reels
 
+        // Update all state
         setDailySpinsLeft(resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
         setExtraSpins(resultData.freshPlayer.extraSpins);
         setPrizePool(resultData.newPool);
 
+        console.log("💰 Win check:", { wonSOL: resultData.wonSOL });
+
         if (resultData.wonSOL > 0) {
+          console.log("🎉 JACKPOT! Won:", resultData.wonSOL.toFixed(4), "SOL");
           setLastWin(resultData.wonSOL);
           setShowConfetti(true);
+        } else {
+          console.log("❌ No win this time");
         }
 
         setIsPlaying(false);
@@ -521,16 +556,6 @@ const App = () => {
     results[1] === zeroImage &&
     results[2] === twoImage;
 
-  // Function to trigger PDF download
-  const downloadWhiteboard = () => {
-    const link = document.createElement("a");
-    link.href = whiteboardPdf;
-    link.download = "Whiteboard.pdf"; // filename when downloaded
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div style={styles.page}>
       <div style={styles.backgroundLayer}></div>
@@ -539,16 +564,6 @@ const App = () => {
 
       <div style={styles.headerSection}>
         <h2 style={styles.headerTitle}>🎰 Devnet Test Mode - SOL Only 🎰</h2>
-        
-        {/* NEW: Program ID Display */}
-        <div style={styles.programIdBox}>
-          Program ID: <code style={styles.programIdCode}>{PROGRAM_ID.toBase58()}</code>
-        </div>
-
-        {/* NEW: Whiteboard PDF Download Button */}
-        <button onClick={downloadWhiteboard} style={styles.downloadButton}>
-          📄 Download Whiteboard PDF
-        </button>
       </div>
 
       <div style={styles.topButtons}>
@@ -691,25 +706,8 @@ const App = () => {
 // ------------------------
 const styles = {
   page: { height: "100vh", width: "100vw", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", overflow: "hidden" },
-  headerSection: { padding: "10px 0", textAlign: "center" },
-  headerTitle: { color: "#FFD700", fontSize: "clamp(1rem, 3vw, 1.6rem)", margin: "5px 0" },
-
-  // NEW styles for Program ID and Download button
-  programIdBox: { margin: "10px 0", color: "#FFF", fontSize: "0.9rem" },
-  programIdCode: { background: "#000", padding: "4px 8px", borderRadius: "6px", color: "#4CAF50", fontFamily: "monospace" },
-  downloadButton: { 
-    margin: "10px 0", 
-    padding: "10px 20px", 
-    fontSize: "1rem", 
-    background: "linear-gradient(135deg, #2196F3, #1976D2)", 
-    color: "white", 
-    border: "none", 
-    borderRadius: "30px", 
-    cursor: "pointer", 
-    fontWeight: "bold",
-    boxShadow: "0 4px 10px rgba(0,0,0,0.3)"
-  },
-
+  headerSection: { padding: "5px 0" },
+  headerTitle: { textAlign: "center", color: "#FFD700", fontSize: "clamp(1rem, 3vw, 1.6rem)", marginTop: "5px" },
   container: { flex: 1, width: "100%", display: "flex", justifyContent: "center", alignItems: "center", overflow: "hidden" },
   slotMachine: { background: "linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 100%)", borderRadius: "20px", padding: "15px", border: "4px solid #FFD700", width: "80%", maxWidth: "600px", maxHeight: "75vh", overflow: "auto", textAlign: "center" },
   displayPanel: { display: "flex", justifyContent: "space-around", marginBottom: "10px", gap: "8px", flexWrap: "wrap" },
