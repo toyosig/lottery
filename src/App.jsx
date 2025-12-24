@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, LAMPORTS_PER_SOL, SystemProgram } from "@solana/web3.js";
+
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import * as anchor from "@coral-xyz/anchor";
 import idl from "./idl.json";
@@ -14,6 +15,7 @@ import apple from "./assets/images/appleImage.png";
 import giraffe from "./assets/images/giraffeImage.png"
 import santa from "./assets/images/santa.png";
 import lotteryBg from "./assets/images/lotteryBg.jpg";
+import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
 const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
 const RECENT_BLOCKHASHES_SYSVAR = new PublicKey("SysvarRecentB1ockHashes11111111111111111111");
@@ -138,6 +140,7 @@ const App = () => {
   const [hasEnoughSOL, setHasEnoughSOL] = useState(false);
   const [timeUntilReset, setTimeUntilReset] = useState("");
   const [holderRank, setHolderRank] = useState(50);
+  const [copiedContract, setCopiedContract] = useState(false);
 
   // Setup Anchor program
   useEffect(() => {
@@ -289,6 +292,23 @@ const App = () => {
     return () => clearInterval(interval);
   }, [program, publicKey]);
 
+  // Copy contract address to clipboard
+  const copyContractAddress = () => {
+    navigator.clipboard.writeText(PROGRAM_ID.toString());
+    setCopiedContract(true);
+    setTimeout(() => setCopiedContract(false), 2000);
+  };
+
+  // Download PDF
+  const downloadPDF = () => {
+    const link = document.createElement('a');
+    link.href = whiteboardPdf;
+    link.download = 'whiteboard.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Register Player
   const registerPlayer = async () => {
     if (!program || !publicKey || playerAccount || !hasEnoughSOL) {
@@ -415,7 +435,7 @@ const App = () => {
     setLastWin(0);
     setShowConfetti(false);
     setSpinning([true, true, true]);
-    setResults([]); // Clear results so nothing shows while spinning
+    setResults([]);
     console.log("🎰 Spinning...");
 
     try {
@@ -445,7 +465,6 @@ const App = () => {
 
       console.log("✅ Spin transaction sent! Tx:", tx);
 
-      // Fetch blockchain results immediately after transaction
       const fetchResults = async () => {
         try {
           const freshPlayer = await program.account.playerAccount.fetch(playerPda);
@@ -459,10 +478,8 @@ const App = () => {
 
           let finalResults;
           if (wonLamports > 0) {
-            // JACKPOT - winning combination 4-0-2
             finalResults = [fourImage, zeroImage, twoImage];
           } else {
-            // NO WIN - random losing combination
             do {
               finalResults = [
                 symbols[Math.floor(Math.random() * symbols.length)],
@@ -484,7 +501,6 @@ const App = () => {
           };
         } catch (e) {
           console.error("❌ Failed to fetch results:", e);
-          // Fallback to random non-winning combination
           let fallbackResults;
           do {
             fallbackResults = [
@@ -506,25 +522,22 @@ const App = () => {
         }
       };
 
-      // Fetch results immediately
       const resultData = await fetchResults();
 
-      // Animate reels stopping one by one and show results progressively
       setTimeout(() => {
         setSpinning([false, true, true]);
-        setResults([resultData.results[0]]); // Show first reel result
+        setResults([resultData.results[0]]);
       }, 1500);
 
       setTimeout(() => {
         setSpinning([false, false, true]);
-        setResults([resultData.results[0], resultData.results[1]]); // Show first two reels
+        setResults([resultData.results[0], resultData.results[1]]);
       }, 2200);
 
       setTimeout(() => {
         setSpinning([false, false, false]);
-        setResults(resultData.results); // Show all three reels
+        setResults(resultData.results);
 
-        // Update all state
         setDailySpinsLeft(resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
         setExtraSpins(resultData.freshPlayer.extraSpins);
         setPrizePool(resultData.newPool);
@@ -569,6 +582,38 @@ const App = () => {
       <div style={styles.topButtons}>
         <WalletMultiButton style={{ ...styles.walletButton, height: "50px" }} />
       </div>
+
+      <div style={styles.contractBox}>
+        <div style={styles.contractLabel}>📜 Contract Address</div>
+
+        <div style={styles.contractAddress}>
+            CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY
+
+        </div>
+
+        <div style={styles.contractActions}>
+          <button
+            style={styles.actionButton}
+            onClick={() => {
+              navigator.clipboard.writeText("CfwgZDQ...i7x347CY");
+            }}
+          >
+            📋 Copy
+          </button>
+
+          <a
+            href="/whitepaper.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ textDecoration: "none" }}
+          >
+            <button style={styles.pdfButton}>
+              📄 Whitepaper
+            </button>
+          </a>
+        </div>
+      </div>
+
 
       {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
 
@@ -701,53 +746,336 @@ const App = () => {
   );
 };
 
+
 // ------------------------
 // Styles
 // ------------------------
 const styles = {
-  page: { height: "100vh", width: "100vw", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", overflow: "hidden" },
-  headerSection: { padding: "5px 0" },
-  headerTitle: { textAlign: "center", color: "#FFD700", fontSize: "clamp(1rem, 3vw, 1.6rem)", marginTop: "5px" },
-  container: { flex: 1, width: "100%", display: "flex", justifyContent: "center", alignItems: "center", overflow: "hidden" },
-  slotMachine: { background: "linear-gradient(180deg, #1a1a2e 0%, #0f0f1e 100%)", borderRadius: "20px", padding: "15px", border: "4px solid #FFD700", width: "80%", maxWidth: "600px", maxHeight: "75vh", overflow: "auto", textAlign: "center" },
-  displayPanel: { display: "flex", justifyContent: "space-around", marginBottom: "10px", gap: "8px", flexWrap: "wrap" },
-  infoBox: { background: "#000", padding: "8px 12px", borderRadius: "10px", border: "2px solid #FFD700", textAlign: "center", minWidth: "90px" },
-  infoLabel: { color: "#FFD700", fontSize: "0.7rem", fontWeight: "bold" },
-  infoValue: { color: "#FFF", fontSize: "1rem", fontWeight: "bold" },
-  title: { fontSize: "1.5rem", color: "#FFD700", marginBottom: "10px" },
-  reelsSection: { background: "#000", padding: "10px", borderRadius: "15px", border: "3px solid #FFD700", marginBottom: "10px" },
-  reelsRow: { display: "flex", justifyContent: "center", gap: "10px" },
-  reelContainer: { position: "relative" },
-  reelBox: { width: "clamp(60px, 15vw, 110px)", height: "clamp(60px, 15vw, 110px)", background: "#000", borderRadius: "10px", overflow: "hidden", border: "3px solid #FFD700" },
-  reelStrip: { display: "flex", flexDirection: "column" },
-  symbol: { width: "100%", height: "clamp(60px, 15vw, 110px)", display: "flex", alignItems: "center", justifyContent: "center", background: "#0a0a0a" },
-  finalNumber: { position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0, 0, 0, 0.85)", display: "flex", justifyContent: "center", alignItems: "center" },
-  controlPanel: { display: "flex", gap: "10px", justifyContent: "center", marginTop: "20px", flexWrap: "wrap" },
-  spinButton: { padding: "12px 20px", fontSize: "1.2rem", borderRadius: "50%", background: "linear-gradient(135deg, #FF1744 0%, #C51162 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "clamp(90px, 20vw, 150px)" },
-  registerButton: { padding: "12px 20px", fontSize: "1.1rem", borderRadius: "50%", background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer", minWidth: "clamp(120px, 25vw, 180px)" },
-  buySpinButton: { padding: "10px 18px", fontSize: "1rem", borderRadius: "50%", background: "linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%)", border: "3px solid #FFD700", color: "white", fontWeight: "bold", cursor: "pointer" },
-  winnerBanner: { margin: "10px 0", padding: "10px", fontSize: "1.2rem", color: "#FFD700", border: "2px solid #FFD700", borderRadius: "10px", fontWeight: "bold" },
-  rankBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FFD700", borderRadius: "10px", color: "#FFD700", fontWeight: "bold", fontSize: "0.9rem" },
-  statsBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #4CAF50", borderRadius: "10px", color: "#4CAF50", fontWeight: "bold", fontSize: "0.85rem" },
-  timerBadge: { margin: "10px 0", padding: "8px", background: "#000", border: "2px solid #FF1744", borderRadius: "10px", color: "#FF1744", fontWeight: "bold" },
-  confettiContainer: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 9999, overflow: "hidden" },
-  confettiPiece: { position: "absolute", top: "-20px", animation: "confettiFall linear infinite" },
-  topButtons: { width: "80%", maxWidth: "600px", display: "flex", justifyContent: "center", marginBottom: "10px" },
-  walletButton: { padding: "10px 15px", fontSize: "0.9rem", borderRadius: "10px", background: "#000", color: "#FFD700", fontWeight: "bold", border: "2px solid #FFD700" },
-  errorMessage: { color: "#FF1744", fontWeight: "bold", marginBottom: "10px", textAlign: "center", fontSize: "1.1rem", padding: "10px", background: "rgba(255, 23, 68, 0.2)", borderRadius: "10px", border: "2px solid #FF1744" },
-  infoText: { marginTop: "15px", fontSize: "0.85rem", color: "#FFF", lineHeight: "1.6", textAlign: "left", padding: "10px", background: "rgba(0,0,0,0.5)", borderRadius: "10px" },
-  backgroundLayer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
+  page: {
+    minHeight: "100vh",
     width: "100%",
-    height: "100%",
-    backgroundImage: `linear-gradient(rgba(75, 12, 12, 0.23), rgba(0,0,0,0.6)), url(${lotteryBg})`,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    overflowX: "hidden",
+    position: "relative",
+  },
+  contractBox: {
+  background: "#000",
+  border: "2px solid #FFD700",
+  borderRadius: "12px",
+  padding: "10px 12px",
+  margin: "8px 0",
+  width: "100%",
+  maxWidth: "420px",
+  textAlign: "center",
+},
+
+contractLabel: {
+  color: "#FFD700",
+  fontSize: "0.7rem",
+  fontWeight: "700",
+  marginBottom: "4px",
+},
+
+contractAddress: {
+  color: "#fff",
+  fontSize: "0.8rem",
+  wordBreak: "break-all",
+  marginBottom: "8px",
+},
+
+  contractActions: {
+    display: "flex",
+    gap: "8px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+  },
+
+  actionButton: {
+    padding: "6px 14px",
+    fontSize: "0.75rem",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #FFD700, #C9A400)",
+    border: "none",
+    color: "#000",
+    fontWeight: "800",
+    cursor: "pointer",
+  },
+
+  pdfButton: {
+    padding: "6px 14px",
+    fontSize: "0.75rem",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #1e88e5, #0d47a1)",
+    border: "2px solid #FFD700",
+    color: "#fff",
+    fontWeight: "700",
+    cursor: "pointer",
+  },
+
+  backgroundLayer: {
+    position: "fixed",
+    inset: 0,
+    backgroundImage: `linear-gradient(rgba(60,10,10,0.35), rgba(0,0,0,0.75)), url(${lotteryBg})`,
     backgroundSize: "cover",
     backgroundPosition: "center",
-    filter: "blur(8px)",
+    filter: "blur(6px)",
     zIndex: -1,
   },
+
+  headerSection: {
+    padding: "6px 0",
+  },
+
+  headerTitle: {
+    color: "#FFD700",
+    fontSize: "1.3rem",
+    fontWeight: "700",
+    letterSpacing: "0.5px",
+    textAlign: "center",
+  },
+
+  topButtons: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    marginBottom: "8px",
+  },
+
+  walletButton: {
+    padding: "10px 15px",
+    fontSize: "0.9rem",
+    borderRadius: "10px",
+    background: "#000",
+    color: "#FFD700",
+    fontWeight: "700",
+    border: "2px solid #FFD700",
+  },
+
+  container: {
+    width: "100%",
+    display: "flex",
+    justifyContent: "center",
+    padding: "0 10px",
+    boxSizing: "border-box",
+  },
+
+  slotMachine: {
+    width: "100%",
+    maxWidth: "500px",
+    background: "linear-gradient(180deg, #141428, #0b0b16)",
+    borderRadius: "16px",
+    padding: "14px",
+    border: "2px solid #FFD700",
+    textAlign: "center",
+  },
+
+  displayPanel: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "6px",
+    marginBottom: "10px",
+  },
+
+  infoBox: {
+    background: "#000",
+    padding: "6px",
+    borderRadius: "8px",
+    border: "1.5px solid #FFD700",
+    textAlign: "center",
+  },
+
+  infoLabel: {
+    color: "#FFD700",
+    fontSize: "0.6rem",
+    fontWeight: "700",
+  },
+
+  infoValue: {
+    color: "#fff",
+    fontSize: "0.9rem",
+    fontWeight: "700",
+  },
+
+  rankBadge: {
+    margin: "8px 0",
+    padding: "8px",
+    background: "#000",
+    border: "2px solid #FFD700",
+    borderRadius: "10px",
+    color: "#FFD700",
+    fontWeight: "700",
+    fontSize: "0.85rem",
+  },
+
+  statsBadge: {
+    margin: "8px 0",
+    padding: "8px",
+    background: "#000",
+    border: "2px solid #4CAF50",
+    borderRadius: "10px",
+    color: "#4CAF50",
+    fontWeight: "700",
+    fontSize: "0.8rem",
+  },
+
+  timerBadge: {
+    margin: "8px 0",
+    padding: "8px",
+    background: "#000",
+    border: "2px solid #FF1744",
+    borderRadius: "10px",
+    color: "#FF1744",
+    fontWeight: "700",
+    fontSize: "0.85rem",
+  },
+
+  title: {
+    color: "#FFD700",
+    fontSize: "1.35rem",
+    margin: "8px 0",
+    fontWeight: "800",
+  },
+
+  reelsSection: {
+    background: "#000",
+    padding: "10px",
+    borderRadius: "12px",
+    border: "2px solid #FFD700",
+    marginBottom: "10px",
+  },
+
+  reelsRow: {
+    display: "flex",
+    justifyContent: "center",
+    gap: "8px",
+  },
+
+  reelContainer: {
+    position: "relative",
+  },
+
+  reelBox: {
+    width: "85px",
+    height: "85px",
+    background: "#000",
+    borderRadius: "10px",
+    overflow: "hidden",
+    border: "2px solid #FFD700",
+    position: "relative",
+  },
+
+  reelStrip: {
+    display: "flex",
+    flexDirection: "column",
+  },
+
+  symbol: {
+    width: "100%",
+    height: "85px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#0a0a0a",
+  },
+
+  finalNumber: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(0,0,0,0.9)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  controlPanel: {
+    display: "flex",
+    gap: "10px",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    marginTop: "14px",
+  },
+
+  spinButton: {
+    padding: "12px 26px",
+    fontSize: "1.15rem",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #ff2d55, #c4002f)",
+    border: "2px solid #FFD700",
+    color: "#fff",
+    fontWeight: "800",
+    cursor: "pointer",
+    boxShadow: "0 0 12px rgba(255,45,85,0.6)",
+  },
+
+  buySpinButton: {
+    padding: "10px 18px",
+    fontSize: "0.95rem",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #7b1fa2, #4a0072)",
+    border: "2px solid #FFD700",
+    color: "#fff",
+    fontWeight: "700",
+  },
+
+  registerButton: {
+    padding: "12px 22px",
+    fontSize: "1rem",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #43a047, #1b5e20)",
+    border: "2px solid #FFD700",
+    color: "#fff",
+    fontWeight: "800",
+  },
+
+  winnerBanner: {
+    margin: "8px 0",
+    padding: "8px",
+    fontSize: "1.05rem",
+    color: "#FFD700",
+    border: "2px solid #FFD700",
+    borderRadius: "8px",
+    fontWeight: "900",
+  },
+
+  infoText: {
+    marginTop: "12px",
+    fontSize: "0.78rem",
+    color: "#eaeaea",
+    lineHeight: "1.6",
+    textAlign: "left",
+    background: "rgba(0,0,0,0.45)",
+    padding: "10px",
+    borderRadius: "8px",
+  },
+
+  errorMessage: {
+    color: "#FF1744",
+    fontWeight: "700",
+    marginBottom: "10px",
+    textAlign: "center",
+    fontSize: "1rem",
+    padding: "10px",
+    background: "rgba(255,23,68,0.15)",
+    borderRadius: "10px",
+    border: "2px solid #FF1744",
+  },
+
+  confettiContainer: {
+    position: "fixed",
+    inset: 0,
+    pointerEvents: "none",
+    zIndex: 9999,
+    overflow: "hidden",
+  },
+
+  confettiPiece: {
+    position: "absolute",
+    top: "-20px",
+    animation: "confettiFall linear infinite",
+  },
 };
+
 
 export default App;
