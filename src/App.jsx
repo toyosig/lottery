@@ -15,7 +15,7 @@ import santa from "./assets/images/santa.png";
 import lotteryBg from "./assets/images/lotteryBg.jpg";
 import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
-const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
+const PROGRAM_ID = new PublicKey("AHJVuYoVquX4wruGcHwNxhFt1tu8SXFB89hhqyDtgK6H");
 const TOKEN_ADDRESS = "5DmyuqNcVyk5shh8J8vUgdLmttu4CMyikHDsXFDQpump";
 const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
@@ -123,6 +123,7 @@ const App = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [isBuyingSpin, setIsBuyingSpin] = useState(false);
   const [timeUntilReset, setTimeUntilReset] = useState("");
+  const [isUpdatingRank, setIsUpdatingRank] = useState(false);
   
   // Token-related states
   const [tokenBalance, setTokenBalance] = useState(0);
@@ -131,6 +132,7 @@ const App = () => {
   const [holderRank, setHolderRank] = useState(null);
   const [hasMinTokens, setHasMinTokens] = useState(false);
   const [isCheckingTokens, setIsCheckingTokens] = useState(false);
+  const [lastRankUpdate, setLastRankUpdate] = useState(null);
 
   // Setup Anchor program
   useEffect(() => {
@@ -375,6 +377,90 @@ const App = () => {
     }
   };
 
+  // NEW: Update player rank on-chain
+  const updatePlayerRank = async () => {
+    if (!program || !publicKey || !playerAccount) {
+      console.log("⚠️ Cannot update rank - not ready");
+      return false;
+    }
+
+    // Check if rank needs updating (once per day)
+    const now = Date.now();
+    if (lastRankUpdate && (now - lastRankUpdate) < 86400000) { // 24 hours in ms
+      console.log("✅ Rank already updated today");
+      return true;
+    }
+
+    setIsUpdatingRank(true);
+    console.log("🔄 Updating player rank from Moralis...");
+
+    try {
+      // Fetch fresh rank data
+      await checkTokenHoldings(publicKey);
+
+      // Wait a bit for state to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      if (!hasMinTokens) {
+        setErrorMessage("Insufficient tokens to continue playing!");
+        setTimeout(() => setErrorMessage(""), 5000);
+        setIsUpdatingRank(false);
+        return false;
+      }
+
+      const [playerPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("player"), publicKey.toBytes()],
+        PROGRAM_ID
+      );
+
+      const [gamePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("game")],
+        PROGRAM_ID
+      );
+
+      const rank = holderRank || 101;
+
+      console.log("📋 Updating rank to:", rank);
+
+      const tx = await program.methods
+        .registerPlayer(rank, hasMinTokens)
+        .accounts({
+          gameState: gamePda,
+          playerAccount: playerPda,
+          player: publicKey,
+          systemProgram: SystemProgram.programId
+        })
+        .rpc({
+          skipPreflight: false,
+          commitment: "confirmed"
+        });
+
+      console.log("✅ Rank updated! Tx:", tx);
+      
+      await connection.confirmTransaction(tx, "confirmed");
+      
+      // Mark rank as updated
+      setLastRankUpdate(now);
+      
+      // Wait for account to update
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      setIsUpdatingRank(false);
+      return true;
+    } catch (err) {
+      console.error("❌ Rank update failed:", err);
+      
+      if (err.logs) {
+        console.error("Program logs:", err.logs);
+      }
+      
+      setErrorMessage("Failed to update rank. Please try again.");
+      setTimeout(() => setErrorMessage(""), 5000);
+      setIsUpdatingRank(false);
+      return false;
+    }
+  };
+
   // Check tokens when wallet connects
   useEffect(() => {
     if (connected && publicKey) {
@@ -449,7 +535,7 @@ const App = () => {
     return () => clearInterval(interval);
   }, [playerAccount]);
 
-  // Fetch Player Account
+  // Fetch Player Account - FIXED VERSION
   useEffect(() => {
     if (!program || !publicKey) {
       setPlayerAccount(null);
@@ -465,24 +551,39 @@ const App = () => {
           PROGRAM_ID
         );
 
+        const accountInfo = await connection.getAccountInfo(playerPda);
+        if (!accountInfo) {
+          console.log("⚠️ Player not registered - account doesn't exist");
+          setPlayerAccount(null);
+          setDailySpinsLeft(0);
+          setExtraSpins(0);
+          return;
+        }
+
         const acc = await program.account.playerAccount.fetch(playerPda);
+        
+        const rank = Number(acc.holderRank?.toString() || 0);
+        const dailyLimit = Number(acc.dailySpinLimit?.toString() || 0);
+        const dailyUsed = Number(acc.dailySpinsUsed?.toString() || 0);
+        const extra = Number(acc.extraSpins?.toString() || 0);
+        
         console.log("👤 Player account:", {
-          rank: acc.holderRank,
-          dailyLimit: acc.dailySpinLimit,
-          dailyUsed: acc.dailySpinsUsed,
-          extraSpins: acc.extraSpins,
-          totalSpins: acc.totalSpins,
-          totalWins: acc.totalWins,
+          rank,
+          dailyLimit,
+          dailyUsed,
+          extraSpins: extra,
+          totalSpins: Number(acc.totalSpins?.toString() || 0),
+          totalWins: Number(acc.totalWins?.toString() || 0),
           totalWinnings: (Number(acc.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
         });
+        
         setPlayerAccount(acc);
         
-        // FIXED: Properly calculate spins left
-        const spinsLeft = Math.max(0, acc.dailySpinLimit - acc.dailySpinsUsed);
+        const spinsLeft = Math.max(0, dailyLimit - dailyUsed);
         setDailySpinsLeft(spinsLeft);
-        setExtraSpins(acc.extraSpins);
+        setExtraSpins(extra);
       } catch (e) {
-        console.log("⚠️ Player not registered");
+        console.log("⚠️ Player fetch error:", e.message);
         setPlayerAccount(null);
         setDailySpinsLeft(0);
         setExtraSpins(0);
@@ -492,7 +593,7 @@ const App = () => {
     fetchPlayer();
     const interval = setInterval(fetchPlayer, 8000);
     return () => clearInterval(interval);
-  }, [program, publicKey]);
+  }, [program, publicKey, connection]);
 
   // Download PDF
   const downloadPDF = () => {
@@ -504,15 +605,28 @@ const App = () => {
     document.body.removeChild(link);
   };
 
-  // Register Player
+  // Register Player - FIXED VERSION
   const registerPlayer = async () => {
-    if (!program || !publicKey || playerAccount) {
-      console.log("⚠️ Cannot register:", { 
-        hasProgram: !!program, 
-        hasPublicKey: !!publicKey, 
-        alreadyRegistered: !!playerAccount
-      });
+    if (!program || !publicKey) {
+      console.log("⚠️ Cannot register - missing program or publicKey");
       return;
+    }
+
+    try {
+      const [playerPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("player"), publicKey.toBytes()],
+        PROGRAM_ID
+      );
+      
+      const existingAccount = await connection.getAccountInfo(playerPda);
+      if (existingAccount) {
+        console.log("✅ Already registered, fetching account...");
+        setErrorMessage("Already registered!");
+        setTimeout(() => setErrorMessage(""), 3000);
+        return;
+      }
+    } catch (e) {
+      // Account doesn't exist, proceed with registration
     }
 
     if (!hasMinTokens) {
@@ -541,7 +655,9 @@ const App = () => {
         holderRank: rank,
         hasMinTokens,
         tokenBalance: tokenBalance.toFixed(4),
-        tokenValueSOL: tokenValueSOL.toFixed(4)
+        tokenValueSOL: tokenValueSOL.toFixed(4),
+        playerPda: playerPda.toString(),
+        gamePda: gamePda.toString()
       });
 
       const tx = await program.methods
@@ -550,6 +666,7 @@ const App = () => {
           gameState: gamePda,
           playerAccount: playerPda,
           player: publicKey,
+          systemProgram: SystemProgram.programId
         })
         .rpc({
           skipPreflight: false,
@@ -558,7 +675,12 @@ const App = () => {
 
       console.log("✅ Registration successful! Tx:", tx);
       
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await connection.confirmTransaction(tx, "confirmed");
+      
+      // Mark rank as updated
+      setLastRankUpdate(Date.now());
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
       setIsRegistering(false);
     } catch (err) {
       console.error("❌ Registration failed:", err);
@@ -573,7 +695,7 @@ const App = () => {
     }
   };
 
-  // Buy Extra Spin
+  // Buy Extra Spin - FIXED VERSION
   const buyExtraSpin = async () => {
     if (!program || !publicKey || !playerAccount) {
       console.log("⚠️ Cannot buy spin - not ready");
@@ -602,10 +724,16 @@ const App = () => {
           player: publicKey,
           systemProgram: SystemProgram.programId
         })
-        .rpc();
+        .rpc({
+          commitment: "confirmed"
+        });
 
       console.log("✅ Extra spin purchased! Tx:", tx);
-      setTimeout(() => setIsBuyingSpin(false), 2000);
+      
+      await connection.confirmTransaction(tx, "confirmed");
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      setIsBuyingSpin(false);
     } catch (err) {
       console.error("❌ Purchase failed:", err);
       setErrorMessage(err?.message || "Purchase failed!");
@@ -614,7 +742,7 @@ const App = () => {
     }
   };
 
-  // Spin Function
+  // Spin Function - MODIFIED to update rank daily
   const play = async () => {
     if (!program || !publicKey || !playerAccount) {
       console.log("⚠️ Cannot spin - not ready");
@@ -626,6 +754,12 @@ const App = () => {
       setErrorMessage("No spins left! Buy extra spins or wait for daily reset.");
       setTimeout(() => setErrorMessage(""), 4000);
       return;
+    }
+
+    // NEW: Update rank before spinning (once per day)
+    const rankUpdated = await updatePlayerRank();
+    if (!rankUpdated) {
+      return; // Stop if rank update failed
     }
 
     setIsPlaying(true);
@@ -657,14 +791,19 @@ const App = () => {
           player: publicKey,
           systemProgram: SystemProgram.programId
         })
-        .rpc();
+        .rpc({
+          commitment: "confirmed"
+        });
 
       console.log("✅ Spin transaction sent! Tx:", tx);
+      
+      // Wait for confirmation
+      await connection.confirmTransaction(tx, "confirmed");
 
-      // FIXED: Better result fetching with proper random generation
+      // Fetch results after confirmation
       const fetchResults = async () => {
         try {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
           
           const freshPlayer = await program.account.playerAccount.fetch(playerPda);
           const gameAccount = await connection.getAccountInfo(gamePda);
@@ -684,7 +823,6 @@ const App = () => {
             finalResults = [symbols[4], symbols[5], symbols[1]]; // fourImage, zeroImage, twoImage
           } else {
             // Generate random non-winning results
-            // Make sure it's NOT the winning combination
             let reel1, reel2, reel3;
             do {
               reel1 = symbols[Math.floor(Math.random() * symbols.length)];
@@ -731,9 +869,9 @@ const App = () => {
         }
       };
 
-
       const resultData = await fetchResults();
 
+      // Animate reels
       setTimeout(() => {
         setSpinning([false, true, true]);
         setResults([resultData.results[0]]);
@@ -748,10 +886,10 @@ const App = () => {
         setSpinning([false, false, false]);
         setResults(resultData.results);
 
-        // FIXED: Update spins properly
-        const newDailySpinsLeft = Math.max(0, resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
+        // Update spins properly
+        const newDailySpinsLeft = Math.max(0, Number(resultData.freshPlayer.dailySpinLimit?.toString() || 0) - Number(resultData.freshPlayer.dailySpinsUsed?.toString() || 0));
         setDailySpinsLeft(newDailySpinsLeft);
-        setExtraSpins(resultData.freshPlayer.extraSpins);
+        setExtraSpins(Number(resultData.freshPlayer.extraSpins?.toString() || 0));
         setPrizePool(resultData.newPool);
 
         console.log("💰 Win check:", { wonSOL: resultData.wonSOL });
@@ -768,14 +906,19 @@ const App = () => {
       }, 3200);
     } catch (err) {
       console.error("❌ Spin failed:", err);
-      setErrorMessage(err?.message || "Spin failed!");
+      
+      if (err.logs) {
+        console.error("Program logs:", err.logs);
+      }
+      
+      setErrorMessage(err?.message?.substring(0, 100) || "Spin failed!");
       setTimeout(() => setErrorMessage(""), 5000);
       setSpinning([false, false, false]);
       setIsPlaying(false);
     }
   };
 
-  // Check if current results are a winning combination (all three match)
+  // Check if current results are a winning combination
   const isWinner = results.length === 3 && 
     results[0] === symbols[4] &&  // fourImage
     results[1] === symbols[5] &&  // zeroImage
@@ -819,6 +962,12 @@ const App = () => {
 
       {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
 
+      {isUpdatingRank && (
+        <div style={styles.updateRankBanner}>
+          🔄 Updating holder rank from Moralis... Please wait.
+        </div>
+      )}
+
       {connected && (
         <div style={styles.tokenInfoBox}>
           <div style={styles.tokenInfoLabel}>
@@ -854,6 +1003,11 @@ const App = () => {
               ⚠️ Need {MIN_TOKEN_VALUE_SOL} SOL worth of {TOKEN_ADDRESS.substring(0, 8)}... tokens to play
             </div>
           )}
+          {lastRankUpdate && (
+            <div style={styles.rankUpdateInfo}>
+              ✅ Rank last updated: {new Date(lastRankUpdate).toLocaleTimeString()}
+            </div>
+          )}
         </div>
       )}
 
@@ -885,7 +1039,8 @@ const App = () => {
 
           {connected && playerAccount && (
             <div style={styles.statsBadge}>
-              📊 Total Spins: {playerAccount.totalSpins} | Wins: {playerAccount.totalWins} | 
+              📊 Total Spins: {Number(playerAccount.totalSpins?.toString() || 0)} | 
+              Wins: {Number(playerAccount.totalWins?.toString() || 0)} | 
               Total Won: {(Number(playerAccount.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4)} SOL
             </div>
           )}
@@ -931,13 +1086,15 @@ const App = () => {
               <>
                 <button
                   onClick={play}
-                  disabled={!connected || isPlaying || (dailySpinsLeft <= 0 && extraSpins <= 0)}
+                  disabled={!connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0)}
                   style={{
                     ...styles.spinButton,
-                    opacity: !connected || isPlaying || (dailySpinsLeft <= 0 && extraSpins <= 0) ? 0.6 : 1,
+                    opacity: !connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0) ? 0.6 : 1,
                   }}
                 >
-                  {isPlaying ? "SPINNING..." : connected ? "SPIN" : "CONNECT WALLET"}
+                  {isPlaying ? "SPINNING..." : 
+                   isUpdatingRank ? "UPDATING RANK..." :
+                   connected ? "SPIN" : "CONNECT WALLET"}
                 </button>
 
                 {connected && playerAccount && (
@@ -961,9 +1118,10 @@ const App = () => {
               💡 Holder Benefits:<br/>
               🥇 Top 10: 100 daily spins | 🥈 Top 11-50: 50 spins | 🥉 Top 51-100: 10 spins<br/>
               💰 Minimum {MIN_TOKEN_VALUE_SOL} SOL worth of tokens required<br/>
-              🎯 Match 3 symbols to win up to 80% of the prize pool!<br/>
-              🔥 Extra spins cost {SPIN_COST_SOL} SOL and never expire<br/>
-              ⚡ Daily spins reset every 24 hours
+              🎯 Match 3 symbols(4-0-2) on up to 80% of the prize pool!<br/>
+              🔥 Extra spins cost {SPIN_COST_SOL} SOL and never expire except usage<br/>
+              ⚡ Daily spins reset every 24 hours<br/>
+              🔄 Your rank is automatically updated from once per day
             </div>
           )}
         </div>
@@ -1076,6 +1234,18 @@ const styles = {
     fontWeight: "700",
     cursor: "pointer",
   },
+  updateRankBanner: {
+    margin: "8px 0",
+    padding: "10px",
+    background: "rgba(156, 39, 176, 0.2)",
+    border: "2px solid #9C27B0",
+    borderRadius: "10px",
+    color: "#9C27B0",
+    fontWeight: "700",
+    fontSize: "0.9rem",
+    maxWidth: "420px",
+    textAlign: "center",
+  },
   tokenInfoBox: {
     background: "#000",
     border: "2px solid #9C27B0",
@@ -1122,6 +1292,16 @@ const styles = {
     border: "1px solid #FF1744",
     borderRadius: "6px",
     color: "#FF1744",
+    fontSize: "0.7rem",
+    textAlign: "center",
+  },
+  rankUpdateInfo: {
+    marginTop: "8px",
+    padding: "6px",
+    background: "rgba(76, 175, 80, 0.15)",
+    border: "1px solid #4CAF50",
+    borderRadius: "6px",
+    color: "#4CAF50",
     fontSize: "0.7rem",
     textAlign: "center",
   },
