@@ -11,9 +11,6 @@
   "instructions": [
     {
       "name": "buy_extra_spin",
-      "docs": [
-        "Buy extra spin - pays in SOL (token payment handled off-chain)"
-      ],
       "discriminator": [
         74,
         206,
@@ -79,9 +76,6 @@
     },
     {
       "name": "fund_prize_pool",
-      "docs": [
-        "Anyone can fund the prize pool"
-      ],
       "discriminator": [
         70,
         32,
@@ -129,9 +123,6 @@
     },
     {
       "name": "get_game_stats",
-      "docs": [
-        "Get recent winners"
-      ],
       "discriminator": [
         17,
         227,
@@ -169,9 +160,6 @@
     },
     {
       "name": "register_player",
-      "docs": [
-        "Register/login - requires token verification off-chain"
-      ],
       "discriminator": [
         242,
         146,
@@ -246,9 +234,6 @@
     },
     {
       "name": "spin",
-      "docs": [
-        "Main spin function"
-      ],
       "discriminator": [
         87,
         64,
@@ -582,7 +567,7 @@
             "type": "u8"
           },
           {
-            "name": "reels_matched",
+            "name": "is_winning_combination",
             "type": "bool"
           },
           {

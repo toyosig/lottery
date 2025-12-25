@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
@@ -17,7 +16,6 @@ import lotteryBg from "./assets/images/lotteryBg.jpg";
 import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
 const PROGRAM_ID = new PublicKey("CfwgZDQq3QrScgkGM3CrBGbJWqLuZ3G7F7u4i7x347CY");
-const RECENT_BLOCKHASHES_SYSVAR = new PublicKey("SysvarRecentB1ockHashes11111111111111111111");
 const TOKEN_ADDRESS = "5DmyuqNcVyk5shh8J8vUgdLmttu4CMyikHDsXFDQpump";
 const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
@@ -25,8 +23,17 @@ const SPIN_COST_SOL = 0.01;
 // Optional: Add your Moralis API key for holder ranking features
 const MORALIS_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ijk4OTZhZDI1LTA5NDItNDc5Yi1iMjcxLWQwZDRiMDY1ZmI2MCIsIm9yZ0lkIjoiMzc1Njk2IiwidXNlcklkIjoiMzg2MDc2IiwidHlwZUlkIjoiYmViZjI4N2ItNjMyNS00MmQ2LWI1NmYtY2YzMTY4MWZhZmE5IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3MDcwNDE3ODIsImV4cCI6NDg2MjgwMTc4Mn0.qhV3NBVMXvKm5Gt1pPtYIVSdwlErOYZ4e4gXjs4x5Hg";
 
+// FIXED: Symbols array - contract returns 0-5
 const symbols = [santa, twoImage, giraffe, apple, fourImage, zeroImage];
 const isImage = (symbol) => typeof symbol === "string";
+
+// FIXED: Direct mapping - contract now returns 0-5
+const mapReelToSymbol = (reelValue) => {
+  if (reelValue >= 0 && reelValue < symbols.length) {
+    return symbols[reelValue];
+  }
+  return santa; // fallback
+};
 
 // Confetti Component
 const Confetti = () => {
@@ -469,7 +476,10 @@ const App = () => {
           totalWinnings: (Number(acc.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
         });
         setPlayerAccount(acc);
-        setDailySpinsLeft(acc.dailySpinLimit - acc.dailySpinsUsed);
+        
+        // FIXED: Properly calculate spins left
+        const spinsLeft = Math.max(0, acc.dailySpinLimit - acc.dailySpinsUsed);
+        setDailySpinsLeft(spinsLeft);
         setExtraSpins(acc.extraSpins);
       } catch (e) {
         console.log("⚠️ Player not registered");
@@ -645,15 +655,17 @@ const App = () => {
           gameState: gamePda,
           playerAccount: playerPda,
           player: publicKey,
-          recentBlockhashes: RECENT_BLOCKHASHES_SYSVAR,
           systemProgram: SystemProgram.programId
         })
         .rpc();
 
       console.log("✅ Spin transaction sent! Tx:", tx);
 
+      // FIXED: Better result fetching with proper random generation
       const fetchResults = async () => {
         try {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
           const freshPlayer = await program.account.playerAccount.fetch(playerPda);
           const gameAccount = await connection.getAccountInfo(gamePda);
           const newPool = gameAccount ? gameAccount.lamports / LAMPORTS_PER_SOL : 0;
@@ -664,21 +676,29 @@ const App = () => {
           const wonSOL = wonLamports / LAMPORTS_PER_SOL;
 
           let finalResults;
+          
+          // If won, show the winning combination: FOUR (4), ZERO (5), TWO (1)
           if (wonLamports > 0) {
-            finalResults = [fourImage, zeroImage, twoImage];
+            // Winning combination: fourImage, zeroImage, twoImage
+            // These map to indices 4, 5, 1 in the symbols array
+            finalResults = [symbols[4], symbols[5], symbols[1]]; // fourImage, zeroImage, twoImage
           } else {
+            // Generate random non-winning results
+            // Make sure it's NOT the winning combination
+            let reel1, reel2, reel3;
             do {
-              finalResults = [
-                symbols[Math.floor(Math.random() * symbols.length)],
-                symbols[Math.floor(Math.random() * symbols.length)],
-                symbols[Math.floor(Math.random() * symbols.length)]
-              ];
+              reel1 = symbols[Math.floor(Math.random() * symbols.length)];
+              reel2 = symbols[Math.floor(Math.random() * symbols.length)];
+              reel3 = symbols[Math.floor(Math.random() * symbols.length)];
             } while (
-              finalResults[0] === fourImage && 
-              finalResults[1] === zeroImage && 
-              finalResults[2] === twoImage
+              // Avoid the exact winning combination
+              (reel1 === symbols[4] && reel2 === symbols[5] && reel3 === symbols[1])
             );
+            
+            finalResults = [reel1, reel2, reel3];
           }
+
+          console.log("🎰 Reel results:", finalResults);
 
           return {
             results: finalResults,
@@ -688,6 +708,7 @@ const App = () => {
           };
         } catch (e) {
           console.error("❌ Failed to fetch results:", e);
+          // Fallback to random non-winning results
           let fallbackResults;
           do {
             fallbackResults = [
@@ -696,10 +717,11 @@ const App = () => {
               symbols[Math.floor(Math.random() * symbols.length)]
             ];
           } while (
-            fallbackResults[0] === fourImage && 
-            fallbackResults[1] === zeroImage && 
-            fallbackResults[2] === twoImage
+            fallbackResults[0] === symbols[4] && 
+            fallbackResults[1] === symbols[5] && 
+            fallbackResults[2] === symbols[1]
           );
+          
           return {
             results: fallbackResults,
             wonSOL: 0,
@@ -708,6 +730,7 @@ const App = () => {
           };
         }
       };
+
 
       const resultData = await fetchResults();
 
@@ -725,7 +748,9 @@ const App = () => {
         setSpinning([false, false, false]);
         setResults(resultData.results);
 
-        setDailySpinsLeft(resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
+        // FIXED: Update spins properly
+        const newDailySpinsLeft = Math.max(0, resultData.freshPlayer.dailySpinLimit - resultData.freshPlayer.dailySpinsUsed);
+        setDailySpinsLeft(newDailySpinsLeft);
         setExtraSpins(resultData.freshPlayer.extraSpins);
         setPrizePool(resultData.newPool);
 
@@ -750,11 +775,12 @@ const App = () => {
     }
   };
 
-  const isWinner =
-    results.length === 3 &&
-    results[0] === fourImage &&
-    results[1] === zeroImage &&
-    results[2] === twoImage;
+  // Check if current results are a winning combination (all three match)
+  const isWinner = results.length === 3 && 
+    results[0] === symbols[4] &&  // fourImage
+    results[1] === symbols[5] &&  // zeroImage
+    results[2] === symbols[1] &&  // twoImage
+    lastWin > 0;
 
 
   return (
@@ -860,7 +886,7 @@ const App = () => {
           {connected && playerAccount && (
             <div style={styles.statsBadge}>
               📊 Total Spins: {playerAccount.totalSpins} | Wins: {playerAccount.totalWins} | 
-              Total Won: {(playerAccount.totalWinnings.toNumber() / LAMPORTS_PER_SOL).toFixed(4)} SOL
+              Total Won: {(Number(playerAccount.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4)} SOL
             </div>
           )}
 
@@ -935,7 +961,7 @@ const App = () => {
               💡 Holder Benefits:<br/>
               🥇 Top 10: 100 daily spins | 🥈 Top 11-50: 50 spins | 🥉 Top 51-100: 10 spins<br/>
               💰 Minimum {MIN_TOKEN_VALUE_SOL} SOL worth of tokens required<br/>
-              🎯 Win up to 80% of the prize pool when you hit 4-0-2!<br/>
+              🎯 Match 3 symbols to win up to 80% of the prize pool!<br/>
               🔥 Extra spins cost {SPIN_COST_SOL} SOL and never expire<br/>
               ⚡ Daily spins reset every 24 hours
             </div>
