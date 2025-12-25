@@ -1017,7 +1017,7 @@ const App = () => {
           <div style={styles.displayPanel}>
             <div style={styles.infoBox}>
               <div style={styles.infoLabel}>PRIZE POOL</div>
-              <div style={styles.infoValue}>10 SOL</div>
+              <div style={styles.infoValue}>10.877 SOL</div>
             </div>
 
             <div style={styles.infoBox}>
