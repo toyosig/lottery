@@ -16,7 +16,7 @@ import lotteryBg from "./assets/images/lotteryBg.jpg";
 import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
 const PROGRAM_ID = new PublicKey("AHJVuYoVquX4wruGcHwNxhFt1tu8SXFB89hhqyDtgK6H");
-const TOKEN_ADDRESS = "5DmyuqNcVyk5shh8J8vUgdLmttu4CMyikHDsXFDQpump";
+const TOKEN_ADDRESS = "BJdGG4rQEkFSDfdwrMjQUpEdJ7NAqqHSZ8dj7ghQpump";
 const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
 
@@ -943,14 +943,13 @@ const App = () => {
       <div style={styles.contractBox}>
         <div style={styles.contractLabel}>📜 Token Contract Address</div>
         <div style={styles.contractAddress}>
-          {/* {PROGRAM_ID.toString().substring(0, 20)}... */}
-          To be updated after launch
+          {TOKEN_ADDRESS.toString().substring(0, 30)}...
         </div>
         <div style={styles.contractActions}>
           <button
             style={styles.actionButton}
             onClick={() => {
-              navigator.clipboard.writeText(PROGRAM_ID.toString());
+              navigator.clipboard.writeText(TOKEN_ADDRESS.toString());
             }}
           >
             📋 Copy
