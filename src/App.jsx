@@ -941,9 +941,10 @@ const App = () => {
       </div>
 
       <div style={styles.contractBox}>
-        <div style={styles.contractLabel}>📜 Contract Address</div>
+        <div style={styles.contractLabel}>📜 Token Contract Address</div>
         <div style={styles.contractAddress}>
-          {PROGRAM_ID.toString().substring(0, 20)}...
+          {/* {PROGRAM_ID.toString().substring(0, 20)}... */}
+          To be updated after launch
         </div>
         <div style={styles.contractActions}>
           <button
