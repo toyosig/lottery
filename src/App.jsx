@@ -485,6 +485,7 @@ const App = () => {
         );
 
         const gameAccount = await connection.getAccountInfo(gamePda);
+        console.log(gameAccount)
         if (gameAccount) {
           const state = await program.account.gameState.fetch(gamePda);
           console.log("🎮 Game state:", {
@@ -1016,7 +1017,7 @@ const App = () => {
           <div style={styles.displayPanel}>
             <div style={styles.infoBox}>
               <div style={styles.infoLabel}>PRIZE POOL</div>
-              <div style={styles.infoValue}>{prizePool.toFixed(4)} SOL</div>
+              <div style={styles.infoValue}>10 SOL</div>
             </div>
 
             <div style={styles.infoBox}>
