@@ -965,7 +965,7 @@ const App = () => {
 
       {isUpdatingRank && (
         <div style={styles.updateRankBanner}>
-          🔄 Updating holder rank from Moralis... Please wait.
+          🔄 Updating holder rank... Please wait.
         </div>
       )}
 
