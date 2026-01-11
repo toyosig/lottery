@@ -11,8 +11,8 @@ import twoImage from "./assets/images/twoImage.png";
 import fourImage from "./assets/images/fourImage.png";
 import apple from "./assets/images/appleImage.png";
 import giraffe from "./assets/images/giraffeImage.png"
-import santa from "./assets/images/santa.png";
-import lotteryBg from "./assets/images/lotteryBg.jpg";
+import santa from "./assets/images/ny.png";
+import lotteryBg from "./assets/images/image.png";
 import whiteboardPdf from "./assets/whiteboardPdf.pdf";
 
 const PROGRAM_ID = new PublicKey("AHJVuYoVquX4wruGcHwNxhFt1tu8SXFB89hhqyDtgK6H");
@@ -20,30 +20,28 @@ const TOKEN_ADDRESS = "BJdGG4rQEkFSDfdwrMjQUpEdJ7NAqqHSZ8dj7ghQpump";
 const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
 
-// Optional: Add your Moralis API key for holder ranking features
+const GAME_WALLET_SEED = "game";
 const MORALIS_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ijk4OTZhZDI1LTA5NDItNDc5Yi1iMjcxLWQwZDRiMDY1ZmI2MCIsIm9yZ0lkIjoiMzc1Njk2IiwidXNlcklkIjoiMzg2MDc2IiwidHlwZUlkIjoiYmViZjI4N2ItNjMyNS00MmQ2LWI1NmYtY2YzMTY4MWZhZmE5IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3MDcwNDE3ODIsImV4cCI6NDg2MjgwMTc4Mn0.qhV3NBVMXvKm5Gt1pPtYIVSdwlErOYZ4e4gXjs4x5Hg";
 
-// FIXED: Symbols array - contract returns 0-5
 const symbols = [santa, twoImage, giraffe, apple, fourImage, zeroImage];
 const isImage = (symbol) => typeof symbol === "string";
 
-// FIXED: Direct mapping - contract now returns 0-5
 const mapReelToSymbol = (reelValue) => {
   if (reelValue >= 0 && reelValue < symbols.length) {
     return symbols[reelValue];
   }
-  return santa; // fallback
+  return santa;
 };
 
-// Confetti Component
+// Enhanced Confetti Component
 const Confetti = () => {
-  const confettiPieces = Array.from({ length: 200 }, (_, i) => ({
+  const confettiPieces = Array.from({ length: 150 }, (_, i) => ({
     id: i,
     left: Math.random() * 100,
-    animationDuration: 3 + Math.random() * 4,
-    color: ["#FFD700", "#FF1744", "#4CAF50", "#9C27B0", "#00BCD4"][Math.floor(Math.random() * 5)],
+    animationDuration: 2.5 + Math.random() * 3,
+    color: ["#FFD700", "#FF1744", "#4CAF50", "#9C27B0", "#00BCD4", "#FF9800"][Math.floor(Math.random() * 6)],
     rotation: Math.random() * 360,
-    size: 8 + Math.random() * 8,
+    size: 6 + Math.random() * 10,
   }));
 
   return (
@@ -66,14 +64,14 @@ const Confetti = () => {
   );
 };
 
-// Reel Component
+// Enhanced Reel Component
 const Reel = ({ spinning, result, delay }) => {
   const renderSymbol = (symbol) => {
     if (!symbol) return null;
     if (isImage(symbol)) {
-      return <img src={symbol} alt="" style={{ width: "70%", height: "70%", objectFit: "contain" }} />;
+      return <img src={symbol} alt="" style={{ width: "75%", height: "75%", objectFit: "contain" }} />;
     }
-    return <span style={{ color: "white", fontWeight: "900" }}>{symbol}</span>;
+    return <span style={{ color: "white", fontWeight: "900", fontSize: "2rem" }}>{symbol}</span>;
   };
 
   return (
@@ -82,7 +80,7 @@ const Reel = ({ spinning, result, delay }) => {
         <div
           style={{
             ...styles.reelStrip,
-            animation: spinning ? "spin 0.1s linear infinite" : "none",
+            animation: spinning ? "spin 0.08s linear infinite" : "none",
             animationDelay: `${delay}ms`,
           }}
         >
@@ -99,6 +97,7 @@ const Reel = ({ spinning, result, delay }) => {
           </div>
         )}
       </div>
+      {!spinning && <div style={styles.reelGlow}></div>}
     </div>
   );
 };
@@ -124,8 +123,10 @@ const App = () => {
   const [isBuyingSpin, setIsBuyingSpin] = useState(false);
   const [timeUntilReset, setTimeUntilReset] = useState("");
   const [isUpdatingRank, setIsUpdatingRank] = useState(false);
-  
-  // Token-related states
+  const [showGlobalWinners, setShowGlobalWinners] = useState(false);
+  const [globalWinners, setGlobalWinners] = useState([]);
+  const [isLoadingWinners, setIsLoadingWinners] = useState(false);
+  const [gameWalletAddress, setGameWalletAddress] = useState("");
   const [tokenBalance, setTokenBalance] = useState(0);
   const [tokenValueSOL, setTokenValueSOL] = useState(0);
   const [tokenPriceUSD, setTokenPriceUSD] = useState(0);
@@ -134,7 +135,7 @@ const App = () => {
   const [isCheckingTokens, setIsCheckingTokens] = useState(false);
   const [lastRankUpdate, setLastRankUpdate] = useState(null);
 
-  // Setup Anchor program
+  // Setup Anchor program and derive game wallet
   useEffect(() => {
     if (!connection || !wallet?.adapter) {
       setProgram(null);
@@ -150,6 +151,13 @@ const App = () => {
       const prog = new Program(idl, provider);
       console.log("✅ Program initialized:", prog.programId.toString());
       setProgram(prog);
+
+      const [gamePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(GAME_WALLET_SEED)],
+        PROGRAM_ID
+      );
+      setGameWalletAddress(gamePda.toString());
+      console.log("💰 Game Funding Wallet:", gamePda.toString());
     } catch (error) {
       console.error("❌ Failed to initialize program:", error);
       setErrorMessage("Failed to load game. Please refresh.");
@@ -158,32 +166,21 @@ const App = () => {
     }
   }, [connection, wallet]);
 
-  // Fetch SOL price in USD from DexScreener
   const fetchSOLPrice = async () => {
     try {
-      console.log("🔍 Fetching SOL/USD price...");
       const response = await fetch(
         `https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112`
       );
-      
-      if (!response.ok) {
-        throw new Error(`DexScreener SOL API error: ${response.status}`);
-      }
 
+      if (!response.ok) throw new Error(`DexScreener SOL API error: ${response.status}`);
       const data = await response.json();
-      
+
       if (data.pairs && data.pairs.length > 0) {
         const bestPair = data.pairs.reduce((prev, current) => 
           (prev.liquidity?.usd || 0) > (current.liquidity?.usd || 0) ? prev : current
         );
-        
-        const solPriceUSD = parseFloat(bestPair.priceUsd || 0);
-        console.log("💰 SOL Price: $" + solPriceUSD.toFixed(2));
-        
-        return solPriceUSD;
+        return parseFloat(bestPair.priceUsd || 0);
       }
-      
-      console.warn("⚠️ No SOL pairs found");
       return 0;
     } catch (error) {
       console.error("❌ Failed to fetch SOL price:", error);
@@ -191,42 +188,26 @@ const App = () => {
     }
   };
 
-  // Fetch token price from DexScreener API
   const fetchTokenPrice = async () => {
     try {
-      console.log("🔍 Fetching token price from DexScreener...");
-      
       const [tokenResponse, solPriceUSD] = await Promise.all([
         fetch(`https://api.dexscreener.com/latest/dex/tokens/${TOKEN_ADDRESS}`),
         fetchSOLPrice()
       ]);
-      
-      if (!tokenResponse.ok) {
-        throw new Error(`DexScreener API error: ${tokenResponse.status}`);
-      }
 
+      if (!tokenResponse.ok) throw new Error(`DexScreener API error: ${tokenResponse.status}`);
       const tokenData = await tokenResponse.json();
-      
+
       if (tokenData.pairs && tokenData.pairs.length > 0) {
         const bestPair = tokenData.pairs.reduce((prev, current) => 
           (prev.liquidity?.usd || 0) > (current.liquidity?.usd || 0) ? prev : current
         );
-        
+
         const tokenPriceUSD = parseFloat(bestPair.priceUsd || 0);
         const tokenPriceSOL = solPriceUSD > 0 ? tokenPriceUSD / solPriceUSD : 0;
-        
-        console.log("💰 Token Price:", { 
-          tokenPriceUSD: tokenPriceUSD.toFixed(8),
-          solPriceUSD: solPriceUSD.toFixed(2),
-          tokenPriceSOL: tokenPriceSOL.toFixed(8)
-        });
-        
         setTokenPriceUSD(tokenPriceUSD);
-        
         return { priceUSD: tokenPriceUSD, priceSOL: tokenPriceSOL };
       }
-      
-      console.warn("⚠️ No pairs found for token - using fallback");
       return { priceUSD: 0, priceSOL: 0 };
     } catch (error) {
       console.error("❌ Failed to fetch token price:", error);
@@ -234,16 +215,10 @@ const App = () => {
     }
   };
 
-  // Fetch token holders from Moralis API
   const fetchTokenHolders = async () => {
-    if (!MORALIS_API_KEY) {
-      console.log("⚠️ Moralis API key not configured - skipping holder ranking");
-      return [];
-    }
+    if (!MORALIS_API_KEY) return [];
 
     try {
-      console.log("🔍 Fetching token holders from Moralis...");
-      
       const options = {
         method: 'GET',
         headers: {
@@ -257,13 +232,8 @@ const App = () => {
         options
       );
 
-      if (!response.ok) {
-        throw new Error(`Moralis API error: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`Moralis API error: ${response.status}`);
       const data = await response.json();
-      console.log("📊 Token holders data:", data);
-      
       return data.result || [];
     } catch (error) {
       console.error("❌ Failed to fetch token holders:", error);
@@ -271,18 +241,15 @@ const App = () => {
     }
   };
 
-  // Check user's token balance and rank
   const checkTokenHoldings = async (walletAddress) => {
     if (!walletAddress) return;
-    
+
     setIsCheckingTokens(true);
-    console.log("🔍 Checking token holdings for:", walletAddress.toString());
 
     try {
       const { priceUSD, priceSOL } = await fetchTokenPrice();
-      
+
       if (priceUSD === 0 || priceSOL === 0) {
-        console.warn("⚠️ Could not fetch token price - allowing play anyway");
         setTokenBalance(1);
         setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
         setHasMinTokens(true);
@@ -291,7 +258,6 @@ const App = () => {
       }
 
       if (!MORALIS_API_KEY) {
-        console.log("⚠️ Moralis API not configured - using fallback values");
         setTokenBalance(1);
         setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
         setHasMinTokens(true);
@@ -313,19 +279,12 @@ const App = () => {
         options
       );
 
-      if (!balanceResponse.ok) {
-        throw new Error(`Moralis balance API error: ${balanceResponse.status}`);
-      }
-
+      if (!balanceResponse.ok) throw new Error(`Moralis balance API error: ${balanceResponse.status}`);
       const balanceData = await balanceResponse.json();
-      console.log("💼 Wallet tokens:", balanceData);
 
-      const tokenData = balanceData.tokens?.find(
-        t => t.mint === TOKEN_ADDRESS
-      );
+      const tokenData = balanceData.tokens?.find(t => t.mint === TOKEN_ADDRESS);
 
       if (!tokenData) {
-        console.log("❌ Token not found in wallet");
         setTokenBalance(0);
         setTokenValueSOL(0);
         setHasMinTokens(false);
@@ -337,19 +296,12 @@ const App = () => {
       const balance = parseFloat(tokenData.amount) / Math.pow(10, tokenData.decimals);
       const valueSOL = balance * priceSOL;
 
-      console.log("💰 Token holdings:", {
-        balance: balance.toFixed(4),
-        tokenPriceSOL: priceSOL.toFixed(8),
-        valueSOL: valueSOL.toFixed(4),
-        meetsMinimum: valueSOL >= MIN_TOKEN_VALUE_SOL
-      });
-
       setTokenBalance(balance);
       setTokenValueSOL(valueSOL);
       setHasMinTokens(valueSOL >= MIN_TOKEN_VALUE_SOL);
 
       const holders = await fetchTokenHolders();
-      
+
       if (holders.length > 0) {
         const sortedHolders = holders
           .map(h => ({
@@ -358,18 +310,13 @@ const App = () => {
           }))
           .sort((a, b) => b.balance - a.balance);
 
-        const userRank = sortedHolders.findIndex(
-          h => h.address === walletAddress.toString()
-        ) + 1;
-
-        console.log("🏆 Holder rank:", userRank, "out of", sortedHolders.length);
+        const userRank = sortedHolders.findIndex(h => h.address === walletAddress.toString()) + 1;
         setHolderRank(userRank > 0 ? userRank : null);
       }
 
       setIsCheckingTokens(false);
     } catch (error) {
       console.error("❌ Token check failed:", error);
-      console.log("⚠️ Using fallback - allowing play");
       setTokenBalance(1);
       setTokenValueSOL(MIN_TOKEN_VALUE_SOL);
       setHasMinTokens(true);
@@ -377,28 +324,84 @@ const App = () => {
     }
   };
 
-  // NEW: Update player rank on-chain
-  const updatePlayerRank = async () => {
-    if (!program || !publicKey || !playerAccount) {
-      console.log("⚠️ Cannot update rank - not ready");
-      return false;
-    }
+  const fetchGlobalWinners = async () => {
+    if (!program) return;
+    
+    setIsLoadingWinners(true);
+    try {
+      const [gamePda] = PublicKey.findProgramAddressSync(
+        [Buffer.from(GAME_WALLET_SEED)],
+        PROGRAM_ID
+      );
 
-    // Check if rank needs updating (once per day)
+      const signatures = await connection.getSignaturesForAddress(gamePda, { limit: 100 });
+      const winners = [];
+      
+      for (const sig of signatures) {
+        try {
+          const tx = await connection.getParsedTransaction(sig.signature, {
+            maxSupportedTransactionVersion: 0
+          });
+          
+          if (!tx || !tx.meta) continue;
+          
+          const postBalances = tx.meta.postBalances;
+          const preBalances = tx.meta.preBalances;
+          const accountKeys = tx.transaction.message.accountKeys;
+          
+          const gameIndex = accountKeys.findIndex(key => 
+            key.pubkey.toString() === gamePda.toString()
+          );
+          
+          if (gameIndex === -1) continue;
+          
+          const balanceChange = postBalances[gameIndex] - preBalances[gameIndex];
+          
+          if (balanceChange < 0) {
+            const winAmount = Math.abs(balanceChange) / LAMPORTS_PER_SOL;
+            
+            for (let i = 0; i < accountKeys.length; i++) {
+              const change = postBalances[i] - preBalances[i];
+              if (change > 0 && i !== gameIndex) {
+                winners.push({
+                  wallet: accountKeys[i].pubkey.toString(),
+                  amount: winAmount,
+                  timestamp: tx.blockTime || Date.now() / 1000,
+                  signature: sig.signature
+                });
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error parsing transaction:", err);
+        }
+      }
+      
+      const sortedWinners = winners
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 50);
+      
+      setGlobalWinners(sortedWinners);
+    } catch (err) {
+      console.error("❌ Failed to fetch global winners:", err);
+    } finally {
+      setIsLoadingWinners(false);
+    }
+  };
+
+  const updatePlayerRank = async () => {
+    if (!program || !publicKey || !playerAccount) return false;
+
     const now = Date.now();
-    if (lastRankUpdate && (now - lastRankUpdate) < 86400000) { // 24 hours in ms
-      console.log("✅ Rank already updated today");
+    if (lastRankUpdate && (now - lastRankUpdate) < 86400000) {
       return true;
     }
 
     setIsUpdatingRank(true);
-    console.log("🔄 Updating player rank from Moralis...");
 
     try {
-      // Fetch fresh rank data
       await checkTokenHoldings(publicKey);
-
-      // Wait a bit for state to update
       await new Promise(resolve => setTimeout(resolve, 500));
 
       if (!hasMinTokens) {
@@ -414,13 +417,11 @@ const App = () => {
       );
 
       const [gamePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("game")],
+        [Buffer.from(GAME_WALLET_SEED)],
         PROGRAM_ID
       );
 
       const rank = holderRank || 101;
-
-      console.log("📋 Updating rank to:", rank);
 
       const tx = await program.methods
         .registerPlayer(rank, hasMinTokens)
@@ -435,25 +436,14 @@ const App = () => {
           commitment: "confirmed"
         });
 
-      console.log("✅ Rank updated! Tx:", tx);
-      
       await connection.confirmTransaction(tx, "confirmed");
-      
-      // Mark rank as updated
       setLastRankUpdate(now);
-      
-      // Wait for account to update
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
       setIsUpdatingRank(false);
       return true;
     } catch (err) {
       console.error("❌ Rank update failed:", err);
-      
-      if (err.logs) {
-        console.error("Program logs:", err.logs);
-      }
-      
       setErrorMessage("Failed to update rank. Please try again.");
       setTimeout(() => setErrorMessage(""), 5000);
       setIsUpdatingRank(false);
@@ -461,7 +451,6 @@ const App = () => {
     }
   };
 
-  // Check tokens when wallet connects
   useEffect(() => {
     if (connected && publicKey) {
       checkTokenHoldings(publicKey);
@@ -473,34 +462,24 @@ const App = () => {
     }
   }, [connected, publicKey]);
 
-  // Fetch Game State and Prize Pool
   useEffect(() => {
     if (!program) return;
 
     const fetchGameState = async () => {
       try {
         const [gamePda] = PublicKey.findProgramAddressSync(
-          [Buffer.from("game")],
+          [Buffer.from(GAME_WALLET_SEED)],
           PROGRAM_ID
         );
 
         const gameAccount = await connection.getAccountInfo(gamePda);
-        console.log(gameAccount)
         if (gameAccount) {
           const state = await program.account.gameState.fetch(gamePda);
-          console.log("🎮 Game state:", {
-            totalSpins: state.totalSpins.toString(),
-            totalJackpots: state.totalJackpots.toString(),
-            totalPaidOut: (Number(state.totalPaidOut?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
-          });
           setGameState(state);
 
           const lamports = gameAccount.lamports;
           const poolSol = lamports / LAMPORTS_PER_SOL;
-          console.log(`💰 Prize pool: ${poolSol.toFixed(4)} SOL`);
           setPrizePool(poolSol);
-        } else {
-          console.log("⚠️ Game state not initialized yet");
         }
       } catch (e) {
         console.log("⚠️ Game state fetch error:", e.message);
@@ -512,7 +491,6 @@ const App = () => {
     return () => clearInterval(interval);
   }, [program, connection]);
 
-  // Calculate time until daily reset
   useEffect(() => {
     if (!playerAccount || !playerAccount.lastSpinReset) return;
 
@@ -536,7 +514,6 @@ const App = () => {
     return () => clearInterval(interval);
   }, [playerAccount]);
 
-  // Fetch Player Account - FIXED VERSION
   useEffect(() => {
     if (!program || !publicKey) {
       setPlayerAccount(null);
@@ -554,7 +531,6 @@ const App = () => {
 
         const accountInfo = await connection.getAccountInfo(playerPda);
         if (!accountInfo) {
-          console.log("⚠️ Player not registered - account doesn't exist");
           setPlayerAccount(null);
           setDailySpinsLeft(0);
           setExtraSpins(0);
@@ -562,24 +538,13 @@ const App = () => {
         }
 
         const acc = await program.account.playerAccount.fetch(playerPda);
-        
-        const rank = Number(acc.holderRank?.toString() || 0);
+
         const dailyLimit = Number(acc.dailySpinLimit?.toString() || 0);
         const dailyUsed = Number(acc.dailySpinsUsed?.toString() || 0);
         const extra = Number(acc.extraSpins?.toString() || 0);
-        
-        console.log("👤 Player account:", {
-          rank,
-          dailyLimit,
-          dailyUsed,
-          extraSpins: extra,
-          totalSpins: Number(acc.totalSpins?.toString() || 0),
-          totalWins: Number(acc.totalWins?.toString() || 0),
-          totalWinnings: (Number(acc.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4) + " SOL"
-        });
-        
+
         setPlayerAccount(acc);
-        
+
         const spinsLeft = Math.max(0, dailyLimit - dailyUsed);
         setDailySpinsLeft(spinsLeft);
         setExtraSpins(extra);
@@ -596,7 +561,6 @@ const App = () => {
     return () => clearInterval(interval);
   }, [program, publicKey, connection]);
 
-  // Download PDF
   const downloadPDF = () => {
     const link = document.createElement('a');
     link.href = whiteboardPdf;
@@ -606,28 +570,22 @@ const App = () => {
     document.body.removeChild(link);
   };
 
-  // Register Player - FIXED VERSION
   const registerPlayer = async () => {
-    if (!program || !publicKey) {
-      console.log("⚠️ Cannot register - missing program or publicKey");
-      return;
-    }
+    if (!program || !publicKey) return;
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("player"), publicKey.toBytes()],
         PROGRAM_ID
       );
-      
+
       const existingAccount = await connection.getAccountInfo(playerPda);
       if (existingAccount) {
-        console.log("✅ Already registered, fetching account...");
         setErrorMessage("Already registered!");
         setTimeout(() => setErrorMessage(""), 3000);
         return;
       }
     } catch (e) {
-      // Account doesn't exist, proceed with registration
     }
 
     if (!hasMinTokens) {
@@ -637,7 +595,6 @@ const App = () => {
     }
 
     setIsRegistering(true);
-    console.log("📝 Registering player...");
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
@@ -646,20 +603,11 @@ const App = () => {
       );
 
       const [gamePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("game")],
+        [Buffer.from(GAME_WALLET_SEED)],
         PROGRAM_ID
       );
 
       const rank = holderRank || 101;
-
-      console.log("📋 Registration params:", {
-        holderRank: rank,
-        hasMinTokens,
-        tokenBalance: tokenBalance.toFixed(4),
-        tokenValueSOL: tokenValueSOL.toFixed(4),
-        playerPda: playerPda.toString(),
-        gamePda: gamePda.toString()
-      });
 
       const tx = await program.methods
         .registerPlayer(rank, hasMinTokens)
@@ -674,37 +622,22 @@ const App = () => {
           commitment: "confirmed"
         });
 
-      console.log("✅ Registration successful! Tx:", tx);
-      
       await connection.confirmTransaction(tx, "confirmed");
-      
-      // Mark rank as updated
       setLastRankUpdate(Date.now());
-      
       await new Promise(resolve => setTimeout(resolve, 2000));
       setIsRegistering(false);
     } catch (err) {
       console.error("❌ Registration failed:", err);
-      
-      if (err.logs) {
-        console.error("Program logs:", err.logs);
-      }
-      
       setErrorMessage(err?.message?.substring(0, 100) || "Registration failed!");
       setTimeout(() => setErrorMessage(""), 5000);
       setIsRegistering(false);
     }
   };
 
-  // Buy Extra Spin - FIXED VERSION
   const buyExtraSpin = async () => {
-    if (!program || !publicKey || !playerAccount) {
-      console.log("⚠️ Cannot buy spin - not ready");
-      return;
-    }
+    if (!program || !publicKey || !playerAccount) return;
 
     setIsBuyingSpin(true);
-    console.log("🛒 Buying extra spin...");
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
@@ -713,7 +646,7 @@ const App = () => {
       );
 
       const [gamePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("game")],
+        [Buffer.from(GAME_WALLET_SEED)],
         PROGRAM_ID
       );
 
@@ -729,11 +662,9 @@ const App = () => {
           commitment: "confirmed"
         });
 
-      console.log("✅ Extra spin purchased! Tx:", tx);
-      
       await connection.confirmTransaction(tx, "confirmed");
       await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
       setIsBuyingSpin(false);
     } catch (err) {
       console.error("❌ Purchase failed:", err);
@@ -743,12 +674,8 @@ const App = () => {
     }
   };
 
-  // Spin Function - MODIFIED to update rank daily
   const play = async () => {
-    if (!program || !publicKey || !playerAccount) {
-      console.log("⚠️ Cannot spin - not ready");
-      return;
-    }
+    if (!program || !publicKey || !playerAccount) return;
 
     const totalSpinsAvailable = dailySpinsLeft + extraSpins;
     if (totalSpinsAvailable <= 0) {
@@ -757,18 +684,14 @@ const App = () => {
       return;
     }
 
-    // NEW: Update rank before spinning (once per day)
     const rankUpdated = await updatePlayerRank();
-    if (!rankUpdated) {
-      return; // Stop if rank update failed
-    }
+    if (!rankUpdated) return;
 
     setIsPlaying(true);
     setLastWin(0);
     setShowConfetti(false);
     setSpinning([true, true, true]);
     setResults([]);
-    console.log("🎰 Spinning...");
 
     try {
       const [playerPda] = PublicKey.findProgramAddressSync(
@@ -777,12 +700,11 @@ const App = () => {
       );
 
       const [gamePda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("game")],
+        [Buffer.from(GAME_WALLET_SEED)],
         PROGRAM_ID
       );
 
       const clientSeed = new BN(Math.floor(Math.random() * 1000000000));
-      console.log("🎲 Client seed:", clientSeed.toString());
 
       const tx = await program.methods
         .spin(clientSeed)
@@ -796,16 +718,12 @@ const App = () => {
           commitment: "confirmed"
         });
 
-      console.log("✅ Spin transaction sent! Tx:", tx);
-      
-      // Wait for confirmation
       await connection.confirmTransaction(tx, "confirmed");
 
-      // Fetch results after confirmation
       const fetchResults = async () => {
         try {
           await new Promise(resolve => setTimeout(resolve, 1500));
-          
+
           const freshPlayer = await program.account.playerAccount.fetch(playerPda);
           const gameAccount = await connection.getAccountInfo(gamePda);
           const newPool = gameAccount ? gameAccount.lamports / LAMPORTS_PER_SOL : 0;
@@ -816,28 +734,21 @@ const App = () => {
           const wonSOL = wonLamports / LAMPORTS_PER_SOL;
 
           let finalResults;
-          
-          // If won, show the winning combination: FOUR (4), ZERO (5), TWO (1)
+
           if (wonLamports > 0) {
-            // Winning combination: fourImage, zeroImage, twoImage
-            // These map to indices 4, 5, 1 in the symbols array
-            finalResults = [symbols[4], symbols[5], symbols[1]]; // fourImage, zeroImage, twoImage
+            finalResults = [symbols[4], symbols[5], symbols[1]];
           } else {
-            // Generate random non-winning results
             let reel1, reel2, reel3;
             do {
               reel1 = symbols[Math.floor(Math.random() * symbols.length)];
               reel2 = symbols[Math.floor(Math.random() * symbols.length)];
               reel3 = symbols[Math.floor(Math.random() * symbols.length)];
             } while (
-              // Avoid the exact winning combination
               (reel1 === symbols[4] && reel2 === symbols[5] && reel3 === symbols[1])
             );
-            
+
             finalResults = [reel1, reel2, reel3];
           }
-
-          console.log("🎰 Reel results:", finalResults);
 
           return {
             results: finalResults,
@@ -847,7 +758,6 @@ const App = () => {
           };
         } catch (e) {
           console.error("❌ Failed to fetch results:", e);
-          // Fallback to random non-winning results
           let fallbackResults;
           do {
             fallbackResults = [
@@ -860,7 +770,7 @@ const App = () => {
             fallbackResults[1] === symbols[5] && 
             fallbackResults[2] === symbols[1]
           );
-          
+
           return {
             results: fallbackResults,
             wonSOL: 0,
@@ -872,7 +782,6 @@ const App = () => {
 
       const resultData = await fetchResults();
 
-      // Animate reels
       setTimeout(() => {
         setSpinning([false, true, true]);
         setResults([resultData.results[0]]);
@@ -887,31 +796,20 @@ const App = () => {
         setSpinning([false, false, false]);
         setResults(resultData.results);
 
-        // Update spins properly
         const newDailySpinsLeft = Math.max(0, Number(resultData.freshPlayer.dailySpinLimit?.toString() || 0) - Number(resultData.freshPlayer.dailySpinsUsed?.toString() || 0));
         setDailySpinsLeft(newDailySpinsLeft);
         setExtraSpins(Number(resultData.freshPlayer.extraSpins?.toString() || 0));
         setPrizePool(resultData.newPool);
 
-        console.log("💰 Win check:", { wonSOL: resultData.wonSOL });
-
         if (resultData.wonSOL > 0) {
-          console.log("🎉 JACKPOT! Won:", resultData.wonSOL.toFixed(4), "SOL");
           setLastWin(resultData.wonSOL);
           setShowConfetti(true);
-        } else {
-          console.log("❌ No win this time");
         }
 
         setIsPlaying(false);
       }, 3200);
     } catch (err) {
       console.error("❌ Spin failed:", err);
-      
-      if (err.logs) {
-        console.error("Program logs:", err.logs);
-      }
-      
       setErrorMessage(err?.message?.substring(0, 100) || "Spin failed!");
       setTimeout(() => setErrorMessage(""), 5000);
       setSpinning([false, false, false]);
@@ -919,213 +817,339 @@ const App = () => {
     }
   };
 
-  // Check if current results are a winning combination
   const isWinner = results.length === 3 && 
-    results[0] === symbols[4] &&  // fourImage
-    results[1] === symbols[5] &&  // zeroImage
-    results[2] === symbols[1] &&  // twoImage
+    results[0] === symbols[4] &&
+    results[1] === symbols[5] &&
+    results[2] === symbols[1] &&
     lastWin > 0;
-
 
   return (
     <div style={styles.page}>
       <div style={styles.backgroundLayer}></div>
+      <div style={styles.gradientOverlay}></div>
 
       {showConfetti && <Confetti />}
 
-      <div style={styles.headerSection}>
-        <h2 style={styles.headerTitle}>🎰 Token-Gated Slot Casino 🎰</h2>
+      {/* Header */}
+      <div style={styles.header}>
+        <div style={styles.headerGlow}></div>
+        <h1 style={styles.headerTitle}>
+          <span style={styles.titleIcon}>🎰</span>
+          NYNM Casino
+          <span style={styles.titleIcon}>🎰</span>
+        </h1>
+        <p style={styles.headerSubtitle}>Spin to win big on Solana</p>
       </div>
 
-      <div style={styles.topButtons}>
-        <WalletMultiButton style={{ ...styles.walletButton, height: "50px" }} />
+      {/* Wallet & Winners Buttons */}
+      <div style={styles.topBar}>
+        <WalletMultiButton style={styles.walletButton} />
+        <button
+          onClick={() => {
+            setShowGlobalWinners(!showGlobalWinners);
+            if (!showGlobalWinners && globalWinners.length === 0) {
+              fetchGlobalWinners();
+            }
+          }}
+          style={styles.winnersButton}
+        >
+          🏆 Winners
+        </button>
       </div>
 
-      <div style={styles.contractBox}>
-        <div style={styles.contractLabel}>📜 Token Contract Address</div>
-        <div style={styles.contractAddress}>
-          {TOKEN_ADDRESS.toString().substring(0, 30)}...
+      {/* Game Funding Wallet */}
+      {gameWalletAddress && (
+        <div style={styles.fundingWallet}>
+          <div style={styles.fundingLabel}>💰 Fund the Prize Pool</div>
+          <div style={styles.fundingAddress}>
+            {gameWalletAddress.substring(0, 16)}...{gameWalletAddress.substring(gameWalletAddress.length - 8)}
+          </div>
+          <div style={styles.fundingActions}>
+            <button
+              style={styles.copyButton}
+              onClick={() => {
+                navigator.clipboard.writeText(gameWalletAddress);
+                setErrorMessage("Address copied!");
+                setTimeout(() => setErrorMessage(""), 2000);
+              }}
+            >
+              📋 Copy
+            </button>
+            <a
+              href={`https://solscan.io/account/${gameWalletAddress}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.solscanLink}
+            >
+              🔍 Solscan
+            </a>
+          </div>
         </div>
+      )}
+
+      {/* Global Winners Modal */}
+      {showGlobalWinners && (
+        <div style={styles.modalOverlay} onClick={() => setShowGlobalWinners(false)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>🏆 Global Winners</h3>
+              <button style={styles.closeButton} onClick={() => setShowGlobalWinners(false)}>×</button>
+            </div>
+            <div style={styles.modalBody}>
+              {isLoadingWinners ? (
+                <div style={styles.loadingText}>Loading...</div>
+              ) : globalWinners.length === 0 ? (
+                <div style={styles.noWinners}>No winners yet. Be the first!</div>
+              ) : (
+                <div style={styles.winnersList}>
+                  {globalWinners.map((winner, idx) => (
+                    <div key={idx} style={styles.winnerItem}>
+                      <div style={styles.winnerRank}>#{idx + 1}</div>
+                      <div style={styles.winnerInfo}>
+                        <div style={styles.winnerWallet}>
+                          {winner.wallet.substring(0, 8)}...{winner.wallet.substring(winner.wallet.length - 6)}
+                        </div>
+                        <div style={styles.winnerTime}>
+                          {new Date(winner.timestamp * 1000).toLocaleString()}
+                        </div>
+                      </div>
+                      <div style={styles.winnerAmount}>{winner.amount.toFixed(4)} SOL</div>
+                      <a
+                        href={`https://solscan.io/tx/${winner.signature}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={styles.txLink}
+                      >
+                        🔗
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Token Contract */}
+      <div style={styles.contractCard}>
+        <div style={styles.cardLabel}>📜 Token Contract</div>
+        <div style={styles.contractAddress}>{TOKEN_ADDRESS.substring(0, 28)}...</div>
         <div style={styles.contractActions}>
           <button
-            style={styles.actionButton}
-            onClick={() => {
-              navigator.clipboard.writeText(TOKEN_ADDRESS.toString());
-            }}
+            style={styles.copyButton}
+            onClick={() => navigator.clipboard.writeText(TOKEN_ADDRESS)}
           >
             📋 Copy
           </button>
-          <button onClick={downloadPDF} style={styles.pdfButton}>
+          <button onClick={downloadPDF} style={styles.whitepaperButton}>
             📄 Whitepaper
           </button>
         </div>
       </div>
 
-      {errorMessage && <div style={styles.errorMessage}>{errorMessage}</div>}
+      {/* Error Message */}
+      {errorMessage && <div style={styles.errorBanner}>{errorMessage}</div>}
 
+      {/* Rank Update Banner */}
       {isUpdatingRank && (
-        <div style={styles.updateRankBanner}>
+        <div style={styles.rankUpdateBanner}>
           🔄 Updating holder rank... Please wait.
         </div>
       )}
 
+      {/* Token Status */}
       {connected && (
-        <div style={styles.tokenInfoBox}>
-          <div style={styles.tokenInfoLabel}>
-            {isCheckingTokens ? "🔄 Checking Token Holdings..." : "💎 Token Status"}
+        <div style={styles.tokenCard}>
+          <div style={styles.cardLabel}>
+            {isCheckingTokens ? "🔄 Checking Holdings..." : "💎 Token Status"}
           </div>
-          <div style={styles.tokenInfoGrid}>
-            <div style={styles.tokenInfoItem}>
-              <span style={styles.tokenInfoKey}>Balance:</span>
-              <span style={styles.tokenInfoValue}>{tokenBalance.toFixed(2)} tokens</span>
+          <div style={styles.tokenGrid}>
+            <div style={styles.tokenStat}>
+              <div style={styles.statLabel}>Name</div>
+              <div style={styles.statValue}>NYNM</div>
             </div>
-            <div style={styles.tokenInfoItem}>
-              <span style={styles.tokenInfoKey}>Value:</span>
-              <span style={styles.tokenInfoValue}>{tokenValueSOL.toFixed(4)} SOL</span>
+            <div style={styles.tokenStat}>
+              <div style={styles.statLabel}>Value</div>
+              <div style={styles.statValue}>{tokenValueSOL.toFixed(4)} SOL</div>
             </div>
-            <div style={styles.tokenInfoItem}>
-              <span style={styles.tokenInfoKey}>Rank:</span>
-              <span style={styles.tokenInfoValue}>
-                {holderRank ? `#${holderRank}` : "Checking..."}
-              </span>
+            <div style={styles.tokenStat}>
+              <div style={styles.statLabel}>Rank</div>
+              <div style={styles.statValue}>{holderRank ? `#${holderRank}` : "—"}</div>
             </div>
-            <div style={styles.tokenInfoItem}>
-              <span style={styles.tokenInfoKey}>Qualified:</span>
-              <span style={{
-                ...styles.tokenInfoValue,
+            <div style={styles.tokenStat}>
+              <div style={styles.statLabel}>Status</div>
+              <div style={{
+                ...styles.statValue,
                 color: hasMinTokens ? "#4CAF50" : "#FF1744"
               }}>
-                {hasMinTokens ? "✅ Yes" : "❌ No"}
-              </span>
+                {hasMinTokens ? "✅" : "❌"}
+              </div>
             </div>
           </div>
           {!hasMinTokens && (
             <div style={styles.tokenWarning}>
-              ⚠️ Need {MIN_TOKEN_VALUE_SOL} SOL worth of {TOKEN_ADDRESS.substring(0, 8)}... tokens to play
-            </div>
-          )}
-          {lastRankUpdate && (
-            <div style={styles.rankUpdateInfo}>
-              ✅ Rank last updated: {new Date(lastRankUpdate).toLocaleTimeString()}
+              ⚠️ Need {MIN_TOKEN_VALUE_SOL} SOL worth of tokens to play
             </div>
           )}
         </div>
       )}
 
-      <div style={styles.container}>
-        <div style={styles.slotMachine}>
-          <div style={styles.displayPanel}>
-            <div style={styles.infoBox}>
-              <div style={styles.infoLabel}>PRIZE POOL</div>
-              <div style={styles.infoValue}>10 SOL</div>
+      {/* Main Slot Machine */}
+      <div style={styles.slotMachine}>
+        {/* Stats Panel */}
+        <div style={styles.statsPanel}>
+          <div style={styles.stat}>
+            <div style={styles.statIcon}>💰</div>
+            <div>
+              <div style={styles.statLabelSmall}>Prize Pool</div>
+              <div style={styles.statValueLarge}>{prizePool.toFixed(4)} SOL</div>
             </div>
-
-            <div style={styles.infoBox}>
-              <div style={styles.infoLabel}>DAILY SPINS</div>
-              <div style={styles.infoValue}>{connected ? dailySpinsLeft : "-"}</div>
+          </div>
+          <div style={styles.stat}>
+            <div style={styles.statIcon}>🎯</div>
+            <div>
+              <div style={styles.statLabelSmall}>Daily Spins</div>
+              <div style={styles.statValueLarge}>{connected ? dailySpinsLeft : "—"}</div>
             </div>
-
-            <div style={styles.infoBox}>
-              <div style={styles.infoLabel}>EXTRA SPINS</div>
-              <div style={styles.infoValue}>{connected ? extraSpins : "-"}</div>
+          </div>
+          <div style={styles.stat}>
+            <div style={styles.statIcon}>⚡</div>
+            <div>
+              <div style={styles.statLabelSmall}>Extra Spins</div>
+              <div style={styles.statValueLarge}>{connected ? extraSpins : "—"}</div>
             </div>
-
-            <div style={styles.infoBox}>
-              <div style={styles.infoLabel}>LAST WIN</div>
-              <div style={{ ...styles.infoValue, color: lastWin > 0 ? "#FFD700" : "#FFF" }}>
-                {lastWin > 0 ? `${lastWin.toFixed(4)} SOL` : "0"}
+          </div>
+          <div style={styles.stat}>
+            <div style={styles.statIcon}>🏆</div>
+            <div>
+              <div style={styles.statLabelSmall}>Last Win</div>
+              <div style={{
+                ...styles.statValueLarge,
+                color: lastWin > 0 ? "#FFD700" : "#fff"
+              }}>
+                {lastWin > 0 ? `${lastWin.toFixed(4)}` : "0"}
               </div>
             </div>
           </div>
+        </div>
 
-          {connected && playerAccount && (
-            <div style={styles.statsBadge}>
-              📊 Total Spins: {Number(playerAccount.totalSpins?.toString() || 0)} | 
-              Wins: {Number(playerAccount.totalWins?.toString() || 0)} | 
-              Total Won: {(Number(playerAccount.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4)} SOL
+        {/* Player Stats Badge */}
+        {connected && playerAccount && (
+          <div style={styles.playerStats}>
+            📊 Spins: {Number(playerAccount.totalSpins?.toString() || 0)} | 
+            Wins: {Number(playerAccount.totalWins?.toString() || 0)} | 
+            Total Won: {(Number(playerAccount.totalWinnings?.toString() || 0) / LAMPORTS_PER_SOL).toFixed(4)} SOL
+          </div>
+        )}
+
+        {/* Timer Badge */}
+        {connected && playerAccount && dailySpinsLeft === 0 && extraSpins === 0 && (
+          <div style={styles.timerBadge}>
+            ⏰ {timeUntilReset}
+          </div>
+        )}
+
+        {/* Reels */}
+        <div style={styles.reelsContainer}>
+          <div style={styles.reelsWrapper}>
+            <Reel spinning={spinning[0]} result={results[0]} delay={0} />
+            <Reel spinning={spinning[1]} result={results[1]} delay={50} />
+            <Reel spinning={spinning[2]} result={results[2]} delay={100} />
+          </div>
+        </div>
+
+        {/* Winner Banner */}
+        {isWinner && (
+          <div style={styles.jackpotBanner}>
+            <div style={styles.jackpotText}>
+              🎉 JACKPOT! 🎉
             </div>
-          )}
-
-          {connected && playerAccount && dailySpinsLeft === 0 && extraSpins === 0 && (
-            <div style={styles.timerBadge}>
-              ⏰ {timeUntilReset}
-            </div>
-          )}
-
-          <h1 style={styles.title}>🎲 Take A Spin 🎲</h1>
-
-          <div style={styles.reelsSection}>
-            <div style={styles.reelsRow}>
-              <Reel spinning={spinning[0]} result={results[0]} delay={0} />
-              <Reel spinning={spinning[1]} result={results[1]} delay={50} />
-              <Reel spinning={spinning[2]} result={results[2]} delay={100} />
+            <div style={styles.jackpotAmount}>
+              {lastWin.toFixed(4)} SOL
             </div>
           </div>
+        )}
 
-          {isWinner && (
-            <div style={styles.winnerBanner}>
-              🎉 JACKPOT! YOU WON {lastWin.toFixed(4)} SOL! 🎉
-            </div>
-          )}
-
-          <div style={styles.controlPanel}>
-            {!playerAccount && connected ? (
+        {/* Controls */}
+        <div style={styles.controls}>
+          {!playerAccount && connected ? (
+            <button
+              onClick={registerPlayer}
+              disabled={isRegistering || !hasMinTokens || isCheckingTokens}
+              style={{
+                ...styles.registerButton,
+                opacity: isRegistering || !hasMinTokens || isCheckingTokens ? 0.5 : 1,
+              }}
+            >
+              {isRegistering ? "Registering..." : 
+               isCheckingTokens ? "Checking Tokens..." :
+               !hasMinTokens ? "Insufficient Tokens" : 
+               "Register to Play"}
+            </button>
+          ) : (
+            <>
               <button
-                onClick={registerPlayer}
-                disabled={isRegistering || !hasMinTokens || isCheckingTokens}
+                onClick={play}
+                disabled={!connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0)}
                 style={{
-                  ...styles.registerButton,
-                  opacity: isRegistering || !hasMinTokens || isCheckingTokens ? 0.6 : 1,
+                  ...styles.spinButton,
+                  opacity: !connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0) ? 0.5 : 1,
                 }}
               >
-                {isRegistering ? "REGISTERING..." : 
-                 isCheckingTokens ? "CHECKING TOKENS..." :
-                 !hasMinTokens ? "INSUFFICIENT TOKENS" : 
-                 "REGISTER TO PLAY"}
+                {isPlaying ? "🎰 Spinning..." : 
+                 isUpdatingRank ? "🔄 Updating..." :
+                 connected ? "🎲 SPIN" : "Connect Wallet"}
               </button>
-            ) : (
-              <>
+
+              {connected && playerAccount && (
                 <button
-                  onClick={play}
-                  disabled={!connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0)}
+                  onClick={buyExtraSpin}
+                  disabled={isBuyingSpin}
                   style={{
-                    ...styles.spinButton,
-                    opacity: !connected || isPlaying || isUpdatingRank || (dailySpinsLeft <= 0 && extraSpins <= 0) ? 0.6 : 1,
+                    ...styles.buyButton,
+                    opacity: isBuyingSpin ? 0.5 : 1,
                   }}
                 >
-                  {isPlaying ? "SPINNING..." : 
-                   isUpdatingRank ? "UPDATING RANK..." :
-                   connected ? "SPIN" : "CONNECT WALLET"}
+                  {isBuyingSpin ? "Buying..." : `Buy Spin (${SPIN_COST_SOL} SOL)`}
                 </button>
-
-                {connected && playerAccount && (
-                  <button
-                    onClick={buyExtraSpin}
-                    disabled={isBuyingSpin}
-                    style={{
-                      ...styles.buySpinButton,
-                      opacity: isBuyingSpin ? 0.6 : 1,
-                    }}
-                  >
-                    {isBuyingSpin ? "BUYING..." : `BUY SPIN (${SPIN_COST_SOL} SOL)`}
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-
-          {connected && (
-            <div style={styles.infoText}>
-              💡 Holder Benefits:<br/>
-              🥇 Top 10: 100 daily spins | 🥈 Top 11-50: 50 spins | 🥉 Top 51-100: 10 spins<br/>
-              💰 Minimum {MIN_TOKEN_VALUE_SOL} SOL worth of tokens required<br/>
-              🎯 Match 3 symbols(4-0-2) on up to 80% of the prize pool!<br/>
-              🔥 Extra spins cost {SPIN_COST_SOL} SOL and never expire except usage<br/>
-              ⚡ Daily spins reset every 24 hours<br/>
-              🔄 Your rank is automatically updated from once per day
-            </div>
+              )}
+            </>
           )}
         </div>
+
+        {/* Info Section */}
+        {connected && (
+          <div style={styles.infoSection}>
+            <div style={styles.infoTitle}>💡 How It Works</div>
+            <div style={styles.infoGrid}>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>🥇</div>
+                <div style={styles.infoItemText}>Top 10: 100 daily spins</div>
+              </div>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>🥈</div>
+                <div style={styles.infoItemText}>Top 11-50: 50 spins</div>
+              </div>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>🥉</div>
+                <div style={styles.infoItemText}>Top 51-100: 10 spins</div>
+              </div>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>🎯</div>
+                <div style={styles.infoItemText}>Match 4-0-2 to win 80% pool</div>
+              </div>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>⚡</div>
+                <div style={styles.infoItemText}>Extra spins: {SPIN_COST_SOL} SOL</div>
+              </div>
+              <div style={styles.infoItem}>
+                <div style={styles.infoItemIcon}>🔄</div>
+                <div style={styles.infoItemText}>Daily reset every 24h</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1137,12 +1161,24 @@ const App = () => {
           0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
           100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
         }
+        @keyframes glow {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.8; }
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        @keyframes shimmer {
+          0% { background-position: -1000px 0; }
+          100% { background-position: 1000px 0; }
+        }
       `}</style>
     </div>
   );
 };
 
-// Styles
+// Enhanced Styles
 const styles = {
   page: {
     minHeight: "100vh",
@@ -1150,250 +1186,469 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
-    overflowX: "hidden",
+    padding: "20px 10px",
     position: "relative",
   },
   backgroundLayer: {
     position: "fixed",
     inset: 0,
-    backgroundImage: `linear-gradient(rgba(60,10,10,0.35), rgba(0,0,0,0.75)), url(${lotteryBg})`,
+    backgroundImage: `url(${lotteryBg})`,
     backgroundSize: "cover",
     backgroundPosition: "center",
-    filter: "blur(6px)",
+    filter: "brightness(0.6)",
+    zIndex: -2,
+  },
+  gradientOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "radial-gradient(circle at 50% 0%, rgba(139, 0, 139, 0.3) 0%, rgba(0, 0, 0, 0.9) 70%)",
     zIndex: -1,
   },
-  headerSection: {
-    padding: "6px 0",
+  header: {
+    textAlign: "center",
+    marginBottom: "20px",
+    position: "relative",
+  },
+  headerGlow: {
+    position: "absolute",
+    inset: "-20px",
+    background: "radial-gradient(circle, rgba(255, 215, 0, 0.2) 0%, transparent 70%)",
+    filter: "blur(30px)",
+    animation: "glow 3s ease-in-out infinite",
+    zIndex: -1,
   },
   headerTitle: {
-    color: "#FFD700",
-    fontSize: "1.3rem",
-    fontWeight: "700",
-    letterSpacing: "0.5px",
-    textAlign: "center",
-  },
-  topButtons: {
-    width: "100%",
+    fontSize: "2.5rem",
+    fontWeight: "900",
+    background: "linear-gradient(135deg, #FFD700 0%, #FFA500 50%, #FFD700 100%)",
+    backgroundSize: "200% 100%",
+    backgroundClip: "text",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    animation: "shimmer 3s linear infinite",
+    textShadow: "0 0 40px rgba(255, 215, 0, 0.5)",
+    margin: "0 0 10px 0",
     display: "flex",
+    alignItems: "center",
     justifyContent: "center",
-    marginBottom: "8px",
+    gap: "15px",
+  },
+  titleIcon: {
+    filter: "drop-shadow(0 0 10px rgba(255, 215, 0, 0.8))",
+  },
+  headerSubtitle: {
+    color: "#b0b0b0",
+    fontSize: "1rem",
+    fontWeight: "500",
+    margin: 0,
+  },
+  topBar: {
+    display: "flex",
+    gap: "12px",
+    marginBottom: "20px",
+    flexWrap: "wrap",
+    justifyContent: "center",
   },
   walletButton: {
-    padding: "10px 15px",
-    fontSize: "0.9rem",
-    borderRadius: "10px",
-    background: "#000",
-    color: "#FFD700",
-    fontWeight: "700",
-    border: "2px solid #FFD700",
-  },
-  contractBox: {
-    background: "#000",
-    border: "2px solid #FFD700",
+    padding: "12px 24px",
+    fontSize: "1rem",
     borderRadius: "12px",
-    padding: "10px 12px",
-    margin: "8px 0",
+    background: "linear-gradient(135deg, #8B00FF 0%, #6200EA 100%)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    color: "#fff",
+    fontWeight: "700",
+    cursor: "pointer",
+    boxShadow: "0 4px 20px rgba(139, 0, 255, 0.4)",
+    transition: "all 0.3s ease",
+  },
+  winnersButton: {
+    padding: "12px 24px",
+    fontSize: "1rem",
+    borderRadius: "12px",
+    background: "linear-gradient(135deg, #FF6B35 0%, #FF1744 100%)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    color: "#fff",
+    fontWeight: "700",
+    cursor: "pointer",
+    boxShadow: "0 4px 20px rgba(255, 23, 68, 0.4)",
+    transition: "all 0.3s ease",
+  },
+  fundingWallet: {
+    background: "linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(30, 30, 30, 0.8) 100%)",
+    backdropFilter: "blur(10px)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "20px",
     width: "100%",
-    maxWidth: "420px",
+    maxWidth: "500px",
+    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+  },
+  fundingLabel: {
+    color: "#FFD700",
+    fontSize: "0.9rem",
+    fontWeight: "700",
+    marginBottom: "10px",
     textAlign: "center",
   },
-  contractLabel: {
-    color: "#FFD700",
-    fontSize: "0.7rem",
+  fundingAddress: {
+    color: "#fff",
+    fontSize: "0.95rem",
+    marginBottom: "15px",
+    textAlign: "center",
+    fontFamily: "monospace",
+    wordBreak: "break-all",
+  },
+  fundingActions: {
+    display: "flex",
+    gap: "10px",
+    justifyContent: "center",
+  },
+  copyButton: {
+    padding: "8px 16px",
+    fontSize: "0.9rem",
+    borderRadius: "8px",
+    background: "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)",
+    border: "none",
+    color: "#000",
     fontWeight: "700",
-    marginBottom: "4px",
+    cursor: "pointer",
+    transition: "all 0.3s ease",
+  },
+  solscanLink: {
+    padding: "8px 16px",
+    fontSize: "0.9rem",
+    borderRadius: "8px",
+    background: "linear-gradient(135deg, #1e88e5 0%, #1565c0 100%)",
+    border: "none",
+    color: "#fff",
+    fontWeight: "700",
+    textDecoration: "none",
+    display: "inline-block",
+    transition: "all 0.3s ease",
+  },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0, 0, 0, 0.85)",
+    backdropFilter: "blur(5px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+    padding: "20px",
+  },
+  modal: {
+    background: "linear-gradient(135deg, rgba(20, 20, 40, 0.95) 0%, rgba(10, 10, 20, 0.95) 100%)",
+    backdropFilter: "blur(20px)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    borderRadius: "20px",
+    maxWidth: "600px",
+    width: "100%",
+    maxHeight: "80vh",
+    overflow: "hidden",
+    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.5)",
+  },
+  modalHeader: {
+    padding: "20px",
+    borderBottom: "1px solid rgba(255, 215, 0, 0.2)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalTitle: {
+    color: "#FFD700",
+    fontSize: "1.5rem",
+    fontWeight: "800",
+    margin: 0,
+  },
+  closeButton: {
+    background: "none",
+    border: "none",
+    color: "#fff",
+    fontSize: "2rem",
+    cursor: "pointer",
+    padding: "0",
+    width: "40px",
+    height: "40px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "8px",
+    transition: "all 0.3s ease",
+  },
+  modalBody: {
+    padding: "20px",
+    maxHeight: "calc(80vh - 80px)",
+    overflowY: "auto",
+  },
+  loadingText: {
+    color: "#fff",
+    textAlign: "center",
+    padding: "40px",
+    fontSize: "1.1rem",
+  },
+  noWinners: {
+    color: "#888",
+    textAlign: "center",
+    padding: "40px",
+    fontSize: "1.1rem",
+  },
+  winnersList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  winnerItem: {
+    background: "rgba(255, 215, 0, 0.05)",
+    border: "1px solid rgba(255, 215, 0, 0.2)",
+    borderRadius: "12px",
+    padding: "15px",
+    display: "flex",
+    alignItems: "center",
+    gap: "15px",
+    transition: "all 0.3s ease",
+  },
+  winnerRank: {
+    background: "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)",
+    color: "#000",
+    fontWeight: "800",
+    width: "40px",
+    height: "40px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  winnerInfo: {
+    flex: 1,
+  },
+  winnerWallet: {
+    color: "#fff",
+    fontSize: "0.95rem",
+    fontFamily: "monospace",
+    marginBottom: "5px",
+  },
+  winnerTime: {
+    color: "#888",
+    fontSize: "0.8rem",
+  },
+  winnerAmount: {
+    color: "#4CAF50",
+    fontWeight: "700",
+    fontSize: "1.1rem",
+    whiteSpace: "nowrap",
+  },
+  txLink: {
+    color: "#1e88e5",
+    fontSize: "1.3rem",
+    textDecoration: "none",
+  },
+  contractCard: {
+    background: "linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(30, 30, 30, 0.8) 100%)",
+    backdropFilter: "blur(10px)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "20px",
+    width: "100%",
+    maxWidth: "500px",
+    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
+  },
+  cardLabel: {
+    color: "#FFD700",
+    fontSize: "0.9rem",
+    fontWeight: "700",
+    marginBottom: "10px",
+    textAlign: "center",
   },
   contractAddress: {
     color: "#fff",
-    fontSize: "0.8rem",
+    fontSize: "0.9rem",
+    marginBottom: "15px",
+    textAlign: "center",
+    fontFamily: "monospace",
     wordBreak: "break-all",
-    marginBottom: "8px",
   },
   contractActions: {
     display: "flex",
-    gap: "8px",
+    gap: "10px",
     justifyContent: "center",
-    flexWrap: "wrap",
   },
-  actionButton: {
-    padding: "6px 14px",
-    fontSize: "0.75rem",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #FFD700, #C9A400)",
+  whitepaperButton: {
+    padding: "8px 16px",
+    fontSize: "0.9rem",
+    borderRadius: "8px",
+    background: "linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)",
     border: "none",
-    color: "#000",
-    fontWeight: "800",
-    cursor: "pointer",
-  },
-  pdfButton: {
-    padding: "6px 14px",
-    fontSize: "0.75rem",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #1e88e5, #0d47a1)",
-    border: "2px solid #FFD700",
     color: "#fff",
     fontWeight: "700",
     cursor: "pointer",
+    transition: "all 0.3s ease",
   },
-  updateRankBanner: {
-    margin: "8px 0",
-    padding: "10px",
-    background: "rgba(156, 39, 176, 0.2)",
-    border: "2px solid #9C27B0",
-    borderRadius: "10px",
-    color: "#9C27B0",
+  errorBanner: {
+    background: "linear-gradient(135deg, rgba(255, 23, 68, 0.2) 0%, rgba(139, 0, 0, 0.2) 100%)",
+    border: "2px solid #FF1744",
+    borderRadius: "12px",
+    padding: "15px",
+    marginBottom: "20px",
+    width: "100%",
+    maxWidth: "500px",
+    color: "#FF1744",
     fontWeight: "700",
-    fontSize: "0.9rem",
-    maxWidth: "420px",
     textAlign: "center",
+    boxShadow: "0 4px 20px rgba(255, 23, 68, 0.3)",
   },
-  tokenInfoBox: {
-    background: "#000",
+  rankUpdateBanner: {
+    background: "linear-gradient(135deg, rgba(156, 39, 176, 0.2) 0%, rgba(123, 31, 162, 0.2) 100%)",
     border: "2px solid #9C27B0",
     borderRadius: "12px",
-    padding: "12px",
-    margin: "8px 0",
+    padding: "15px",
+    marginBottom: "20px",
     width: "100%",
-    maxWidth: "420px",
+    maxWidth: "500px",
+    color: "#9C27B0",
+    fontWeight: "700",
+    textAlign: "center",
   },
-  tokenInfoLabel: {
+  tokenCard: {
+    background: "linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(30, 30, 30, 0.8) 100%)",
+    backdropFilter: "blur(10px)",
+    border: "2px solid rgba(156, 39, 176, 0.5)",
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "20px",
+    width: "100%",
+    maxWidth: "500px",
+    boxShadow: "0 8px 32px rgba(156, 39, 176, 0.3)",
+  },
+  tokenGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "15px",
+    marginTop: "15px",
+  },
+  tokenStat: {
+    background: "rgba(156, 39, 176, 0.1)",
+    border: "1px solid rgba(156, 39, 176, 0.3)",
+    borderRadius: "10px",
+    padding: "15px",
+    textAlign: "center",
+  },
+  statLabel: {
     color: "#9C27B0",
     fontSize: "0.8rem",
-    fontWeight: "700",
-    marginBottom: "8px",
-    textAlign: "center",
-  },
-  tokenInfoGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "8px",
-  },
-  tokenInfoItem: {
-    background: "rgba(156, 39, 176, 0.1)",
-    padding: "6px",
-    borderRadius: "6px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px",
-  },
-  tokenInfoKey: {
-    color: "#9C27B0",
-    fontSize: "0.65rem",
     fontWeight: "600",
+    marginBottom: "5px",
   },
-  tokenInfoValue: {
+  statValue: {
     color: "#fff",
-    fontSize: "0.85rem",
-    fontWeight: "700",
+    fontSize: "1.1rem",
+    fontWeight: "800",
   },
   tokenWarning: {
-    marginTop: "8px",
-    padding: "6px",
+    marginTop: "15px",
+    padding: "12px",
     background: "rgba(255, 23, 68, 0.15)",
     border: "1px solid #FF1744",
-    borderRadius: "6px",
+    borderRadius: "10px",
     color: "#FF1744",
-    fontSize: "0.7rem",
+    fontSize: "0.85rem",
     textAlign: "center",
-  },
-  rankUpdateInfo: {
-    marginTop: "8px",
-    padding: "6px",
-    background: "rgba(76, 175, 80, 0.15)",
-    border: "1px solid #4CAF50",
-    borderRadius: "6px",
-    color: "#4CAF50",
-    fontSize: "0.7rem",
-    textAlign: "center",
-  },
-  container: {
-    width: "100%",
-    display: "flex",
-    justifyContent: "center",
-    padding: "0 10px",
-    boxSizing: "border-box",
   },
   slotMachine: {
     width: "100%",
-    maxWidth: "500px",
-    background: "linear-gradient(180deg, #141428, #0b0b16)",
-    borderRadius: "16px",
-    padding: "14px",
-    border: "2px solid #FFD700",
-    textAlign: "center",
+    maxWidth: "600px",
+    background: "linear-gradient(135deg, rgba(20, 20, 40, 0.95) 0%, rgba(10, 10, 20, 0.95) 100%)",
+    backdropFilter: "blur(20px)",
+    border: "3px solid rgba(255, 215, 0, 0.4)",
+    borderRadius: "24px",
+    padding: "30px 20px",
+    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1)",
+    position: "relative",
   },
-  displayPanel: {
+  statsPanel: {
     display: "grid",
     gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "6px",
-    marginBottom: "10px",
+    gap: "15px",
+    marginBottom: "20px",
   },
-  infoBox: {
-    background: "#000",
-    padding: "6px",
-    borderRadius: "8px",
-    border: "1.5px solid #FFD700",
-    textAlign: "center",
+  stat: {
+    background: "rgba(0, 0, 0, 0.6)",
+    border: "2px solid rgba(255, 215, 0, 0.3)",
+    borderRadius: "12px",
+    padding: "15px",
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    transition: "all 0.3s ease",
   },
-  infoLabel: {
+  statIcon: {
+    fontSize: "2rem",
+    filter: "drop-shadow(0 0 8px rgba(255, 215, 0, 0.5))",
+  },
+  statLabelSmall: {
     color: "#FFD700",
-    fontSize: "0.6rem",
-    fontWeight: "700",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+    marginBottom: "5px",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
   },
-  infoValue: {
+  statValueLarge: {
     color: "#fff",
-    fontSize: "0.9rem",
-    fontWeight: "700",
-  },
-  statsBadge: {
-    margin: "8px 0",
-    padding: "8px",
-    background: "#000",
-    border: "2px solid #4CAF50",
-    borderRadius: "10px",
-    color: "#4CAF50",
-    fontWeight: "700",
-    fontSize: "0.8rem",
-  },
-  timerBadge: {
-    margin: "8px 0",
-    padding: "8px",
-    background: "#000",
-    border: "2px solid #FF1744",
-    borderRadius: "10px",
-    color: "#FF1744",
-    fontWeight: "700",
-    fontSize: "0.85rem",
-  },
-  title: {
-    color: "#FFD700",
-    fontSize: "1.35rem",
-    margin: "8px 0",
+    fontSize: "1.2rem",
     fontWeight: "800",
   },
-  reelsSection: {
-    background: "#000",
-    padding: "10px",
+  playerStats: {
+    background: "rgba(76, 175, 80, 0.1)",
+    border: "2px solid rgba(76, 175, 80, 0.4)",
     borderRadius: "12px",
-    border: "2px solid #FFD700",
-    marginBottom: "10px",
+    padding: "12px",
+    marginBottom: "15px",
+    color: "#4CAF50",
+    fontWeight: "700",
+    fontSize: "0.9rem",
+    textAlign: "center",
   },
-  reelsRow: {
+  timerBadge: {
+    background: "rgba(255, 23, 68, 0.1)",
+    border: "2px solid rgba(255, 23, 68, 0.4)",
+    borderRadius: "12px",
+    padding: "12px",
+    marginBottom: "15px",
+    color: "#FF1744",
+    fontWeight: "700",
+    fontSize: "0.95rem",
+    textAlign: "center",
+  },
+  reelsContainer: {
+    background: "rgba(0, 0, 0, 0.7)",
+    border: "3px solid rgba(255, 215, 0, 0.5)",
+    borderRadius: "16px",
+    padding: "30px 20px",
+    marginBottom: "20px",
+    position: "relative",
+    boxShadow: "inset 0 4px 20px rgba(0, 0, 0, 0.8)",
+  },
+  reelsWrapper: {
     display: "flex",
     justifyContent: "center",
-    gap: "8px",
+    gap: "15px",
   },
   reelContainer: {
     position: "relative",
   },
   reelBox: {
-    width: "85px",
-    height: "85px",
-    background: "#000",
-    borderRadius: "10px",
+    width: "100px",
+    height: "100px",
+    background: "linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)",
+    borderRadius: "12px",
     overflow: "hidden",
-    border: "2px solid #FFD700",
+    border: "3px solid rgba(255, 215, 0, 0.6)",
     position: "relative",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6), inset 0 2px 4px rgba(255, 215, 0, 0.1)",
   },
   reelStrip: {
     display: "flex",
@@ -1401,7 +1656,7 @@ const styles = {
   },
   symbol: {
     width: "100%",
-    height: "85px",
+    height: "100px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1410,79 +1665,128 @@ const styles = {
   finalNumber: {
     position: "absolute",
     inset: 0,
-    background: "rgba(0,0,0,0.9)",
+    background: "rgba(0, 0, 0, 0.95)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    animation: "pulse 1s ease-in-out",
   },
-  controlPanel: {
+  reelGlow: {
+    position: "absolute",
+    inset: "-5px",
+    background: "radial-gradient(circle, rgba(255, 215, 0, 0.4) 0%, transparent 70%)",
+    borderRadius: "12px",
+    filter: "blur(10px)",
+    zIndex: -1,
+    animation: "glow 2s ease-in-out infinite",
+  },
+  jackpotBanner: {
+    background: "linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 165, 0, 0.2) 100%)",
+    border: "3px solid #FFD700",
+    borderRadius: "16px",
+    padding: "20px",
+    marginBottom: "20px",
+    textAlign: "center",
+    boxShadow: "0 8px 32px rgba(255, 215, 0, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.2)",
+    animation: "pulse 1.5s ease-in-out infinite",
+  },
+  jackpotText: {
+    fontSize: "1.8rem",
+    fontWeight: "900",
+    color: "#FFD700",
+    marginBottom: "10px",
+    textShadow: "0 0 20px rgba(255, 215, 0, 0.8)",
+  },
+  jackpotAmount: {
+    fontSize: "2.2rem",
+    fontWeight: "900",
+    background: "linear-gradient(135deg, #FFD700 0%, #FFA500 100%)",
+    backgroundClip: "text",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    textShadow: "0 0 30px rgba(255, 215, 0, 0.6)",
+  },
+  controls: {
     display: "flex",
-    gap: "10px",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    marginTop: "14px",
-  },
-  spinButton: {
-    padding: "12px 26px",
-    fontSize: "1.15rem",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #ff2d55, #c4002f)",
-    border: "2px solid #FFD700",
-    color: "#fff",
-    fontWeight: "800",
-    cursor: "pointer",
-    boxShadow: "0 0 12px rgba(255,45,85,0.6)",
-  },
-  buySpinButton: {
-    padding: "10px 18px",
-    fontSize: "0.95rem",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #7b1fa2, #4a0072)",
-    border: "2px solid #FFD700",
-    color: "#fff",
-    fontWeight: "700",
-    cursor: "pointer",
+    flexDirection: "column",
+    gap: "15px",
+    marginBottom: "20px",
   },
   registerButton: {
-    padding: "12px 22px",
-    fontSize: "1rem",
-    borderRadius: "999px",
-    background: "linear-gradient(135deg, #43a047, #1b5e20)",
-    border: "2px solid #FFD700",
+    padding: "18px 32px",
+    fontSize: "1.2rem",
+    borderRadius: "16px",
+    background: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
+    border: "3px solid rgba(76, 175, 80, 0.5)",
     color: "#fff",
     fontWeight: "800",
     cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(76, 175, 80, 0.4)",
+    transition: "all 0.3s ease",
+    textTransform: "uppercase",
+    letterSpacing: "1px",
   },
-  winnerBanner: {
-    margin: "8px 0",
-    padding: "8px",
-    fontSize: "1.05rem",
-    color: "#FFD700",
-    border: "2px solid #FFD700",
-    borderRadius: "8px",
+  spinButton: {
+    padding: "20px 40px",
+    fontSize: "1.4rem",
+    borderRadius: "16px",
+    background: "linear-gradient(135deg, #FF1744 0%, #C62828 100%)",
+    border: "3px solid rgba(255, 215, 0, 0.5)",
+    color: "#fff",
     fontWeight: "900",
+    cursor: "pointer",
+    boxShadow: "0 8px 32px rgba(255, 23, 68, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.2)",
+    transition: "all 0.3s ease",
+    textTransform: "uppercase",
+    letterSpacing: "2px",
   },
-  infoText: {
-    marginTop: "12px",
-    fontSize: "0.78rem",
-    color: "#eaeaea",
-    lineHeight: "1.6",
-    textAlign: "left",
-    background: "rgba(0,0,0,0.45)",
-    padding: "10px",
-    borderRadius: "8px",
-  },
-  errorMessage: {
-    color: "#FF1744",
+  buyButton: {
+    padding: "15px 28px",
+    fontSize: "1.05rem",
+    borderRadius: "12px",
+    background: "linear-gradient(135deg, #9C27B0 0%, #6A1B9A 100%)",
+    border: "2px solid rgba(156, 39, 176, 0.5)",
+    color: "#fff",
     fontWeight: "700",
-    marginBottom: "10px",
+    cursor: "pointer",
+    boxShadow: "0 6px 20px rgba(156, 39, 176, 0.4)",
+    transition: "all 0.3s ease",
+  },
+  infoSection: {
+    background: "rgba(0, 0, 0, 0.4)",
+    borderRadius: "12px",
+    padding: "20px",
+    border: "1px solid rgba(255, 215, 0, 0.2)",
+  },
+  infoTitle: {
+    color: "#FFD700",
+    fontSize: "1.1rem",
+    fontWeight: "800",
+    marginBottom: "15px",
     textAlign: "center",
-    fontSize: "1rem",
-    padding: "10px",
-    background: "rgba(255,23,68,0.15)",
-    borderRadius: "10px",
-    border: "2px solid #FF1744",
-    maxWidth: "420px",
+  },
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, 1fr)",
+    gap: "12px",
+  },
+  infoItem: {
+    background: "rgba(255, 215, 0, 0.05)",
+    border: "1px solid rgba(255, 215, 0, 0.2)",
+    borderRadius: "8px",
+    padding: "12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  },
+  infoItemIcon: {
+    fontSize: "1.5rem",
+  },
+  infoItemText: {
+    color: "#e0e0e0",
+    fontSize: "0.85rem",
+    fontWeight: "500",
+    lineHeight: "1.4",
   },
   confettiContainer: {
     position: "fixed",
