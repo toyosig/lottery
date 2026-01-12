@@ -14,9 +14,9 @@ import giraffe from "./assets/images/giraffeImage.png"
 import santa from "./assets/images/ny.png";
 import lotteryBg from "./assets/images/image.png";
 import whiteboardPdf from "./assets/whiteboardPdf.pdf";
-
+// BJdGG4rQEkFSDfdwrMjQUpEdJ7NAqqHSZ8dj7ghQpump
 const PROGRAM_ID = new PublicKey("AHJVuYoVquX4wruGcHwNxhFt1tu8SXFB89hhqyDtgK6H");
-const TOKEN_ADDRESS = "BJdGG4rQEkFSDfdwrMjQUpEdJ7NAqqHSZ8dj7ghQpump";
+const TOKEN_ADDRESS = "";
 const MIN_TOKEN_VALUE_SOL = 0.04;
 const SPIN_COST_SOL = 0.01;
 
