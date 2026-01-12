@@ -995,15 +995,12 @@ const App = () => {
         </div>
       )}
 
-      {/* Main Slot Machine */}
-      <div style={styles.slotMachine}>
-        {/* Stats Panel */}
-        <div style={styles.statsPanel}>
-          <div style={styles.stat}>
-            <div style={styles.statIcon}>💰</div>
-            <div>
-              <div style={styles.statLabelSmall}>Prize Pool</div>
-              <div style={styles.statValueLarge}>{prizePool.toFixed(4)} SOL</div>
+      <div style={styles.container}>
+        <div style={styles.slotMachine}>
+          <div style={styles.displayPanel}>
+            <div style={styles.infoBox}>
+              <div style={styles.infoLabel}>PRIZE POOL</div>
+              <div style={styles.infoValue}>1.877 SOL</div>
             </div>
           </div>
           <div style={styles.stat}>
